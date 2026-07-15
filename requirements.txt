@@ -1,0 +1,23 @@
+# ReviewLens — full dependency set (baseline + transformer/ML stack).
+#
+#   pip install -r requirements.txt
+#
+# For a fast, offline baseline install use requirements-core.txt instead.
+# The packages below are only needed for the fine-tuned transformer models,
+# aspect clustering with embeddings, and SemEval training/evaluation.
+
+-r requirements-core.txt
+
+# ---- Transformer models & training (heavier; downloads model weights) ----
+torch>=2.1                    # backend for transformers / sentence-transformers
+transformers>=4.38            # fine-tuned aspect extraction + aspect-sentiment
+datasets>=2.16                # SemEval-2014 / MAMS loading
+accelerate>=0.26              # training loop helpers
+seqeval>=1.2.2                # token-level (BIO) F1 for aspect extraction
+
+# ---- Aspect clustering (embeddings) ----
+sentence-transformers>=2.3    # all-MiniLM-L6-v2 aspect embeddings
+hdbscan>=0.8.33               # density-based theme discovery (alt to KMeans)
+
+# ---- Optional alternative aspect extractor ----
+# spacy>=3.7                  # uncomment + `python -m spacy download en_core_web_sm`

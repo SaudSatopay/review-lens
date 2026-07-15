@@ -1,0 +1,44 @@
+# ReviewLens configuration.
+# Central place for paths, model names, and pipeline parameters so nothing is
+# hard-coded across modules. Loaded via reviewlens.config.load_config().
+
+project_name: ReviewLens
+
+paths:
+  data_raw: data/raw
+  data_processed: data/processed
+  data_sample: data/sample/sample_reviews.csv
+  models: models
+
+# Expected column names in an input reviews CSV. The ingester renames source
+# columns to this canonical schema (see reviewlens/data/ingest.py).
+schema:
+  id: review_id
+  text: text
+  rating: rating      # optional (1-5); used for trend analysis
+  date: date          # optional (ISO date); used for trend analysis
+  product: product    # optional; used as a dashboard filter
+
+aspects:
+  # Baseline noun-phrase extractor settings.
+  min_term_length: 3
+  max_term_words: 4          # keep noun phrases up to 4 tokens ("battery life")
+  extractor: baseline        # baseline | transformer (transformer = later slice)
+
+sentiment:
+  # VADER compound-score thresholds -> {positive, neutral, negative}.
+  pos_threshold: 0.05
+  neg_threshold: -0.05
+  aspect_model: baseline     # baseline (VADER) | absa (transformer, later slice)
+  # Strong pretrained ABSA baseline for the transformer slice.
+  absa_model_name: yangheng/deberta-v3-base-absa-v1.1
+
+clustering:
+  method: normalized         # normalized (baseline) | kmeans | hdbscan (later slice)
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  n_clusters: 8              # used when method = kmeans
+
+summary:
+  top_k_aspects: 8           # how many aspects to feature as "loved" / "hated"
+  min_mentions: 2            # ignore aspects seen fewer times than this
+  quotes_per_aspect: 2

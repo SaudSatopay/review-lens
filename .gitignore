@@ -1,0 +1,62 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.installed.cfg
+*.egg
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ---- Notebooks ----
+.ipynb_checkpoints/
+
+# ---- Testing / coverage ----
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ---- IDEs / OS ----
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ---- ReviewLens data & models (kept out of git on purpose) ----
+# Raw and processed datasets can be large / license-restricted.
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+# The tiny committed sample is the exception so the pipeline runs out of the box.
+!data/sample/
+!data/sample/*.csv
+
+# Fine-tuned / downloaded model weights.
+models/*
+!models/.gitkeep
+
+# HuggingFace / torch caches, if pointed inside the repo.
+.cache/
+*.pt
+*.bin
+*.safetensors
+
+# ---- Secrets / local config ----
+.env
+.env.*
+!.env.example

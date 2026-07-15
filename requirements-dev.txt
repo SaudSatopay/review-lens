@@ -1,0 +1,9 @@
+# ReviewLens — developer tooling (tests, linting, notebooks).
+#
+#   pip install -r requirements-dev.txt
+#
+-r requirements-core.txt
+
+pytest>=7.4
+ruff>=0.3.0        # linter + formatter
+ipykernel>=6.29    # run notebooks/ against the project venv

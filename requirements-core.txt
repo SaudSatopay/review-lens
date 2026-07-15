@@ -1,0 +1,21 @@
+# ReviewLens — core runtime dependencies.
+# This is the lightweight set needed to run the *baseline* end-to-end pipeline
+# and the Streamlit dashboard. It intentionally avoids torch / transformers so
+# the project is runnable in seconds without multi-GB downloads.
+#
+#   pip install -r requirements-core.txt
+#
+pandas>=2.0
+numpy>=1.24
+pyyaml>=6.0
+tqdm>=4.66
+pyarrow>=14.0          # parquet I/O for processed data
+
+# NLP baseline
+nltk>=3.8              # sentence splitting + noun-phrase chunking (aspect baseline)
+vaderSentiment>=3.3.2  # lexicon sentiment (doc-level baseline + baseline aspect sentiment)
+scikit-learn>=1.3      # clustering + evaluation metrics (macro-F1, etc.)
+
+# Dashboard
+streamlit>=1.30
+plotly>=5.18
