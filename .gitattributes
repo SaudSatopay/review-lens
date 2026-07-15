@@ -1,0 +1,14 @@
+# Normalize line endings: store text as LF in the repository.
+* text=auto eol=lf
+
+# Binary assets — never touch.
+*.parquet binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.gz binary
+*.zip binary
+*.pt binary
+*.bin binary
+*.safetensors binary
