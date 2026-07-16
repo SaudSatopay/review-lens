@@ -4,15 +4,21 @@ Run from the repo root::
 
     streamlit run app/streamlit_app.py
 
-Loads processed data from ``data/processed/aspects.parquet`` if present; if not,
-it runs the baseline pipeline on the bundled sample so the dashboard always has
-something to show.
+Two data modes (sidebar):
+
+* **Processed outputs** — reads ``data/processed/*.parquet`` written by the
+  pipeline CLI (whatever models that run used).
+* **Live sample** — runs the pipeline on the bundled sample right in the app,
+  with selectable extractor / sentiment models, so the baseline-vs-transformer
+  difference can be flipped live.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import pathlib
 import sys
+from copy import deepcopy
 
 import pandas as pd
 import plotly.express as px
@@ -32,25 +38,72 @@ from reviewlens.config import load_config, resolve_path  # noqa: E402
 from reviewlens.pipeline import run_pipeline  # noqa: E402
 
 SENTIMENT_COLORS = {"positive": "#2ca02c", "neutral": "#9e9e9e", "negative": "#d62728"}
+FINETUNED_ABSA = "absa — our fine-tune"
+PRETRAINED_ABSA = "absa — pretrained checkpoint"
 
 st.set_page_config(page_title="ReviewLens", page_icon="🔍", layout="wide")
 
 
-@st.cache_data(show_spinner="Building baseline from sample…")
-def load_aspects(rebuild: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load processed aspect/review frames, or build them from the sample."""
+def _model_options() -> tuple[list[str], list[str]]:
+    """Model choices that are actually available in this environment."""
     cfg = load_config()
-    processed = resolve_path(cfg["paths"]["data_processed"])
-    aspects_path = processed / "aspects.parquet"
-    reviews_path = processed / "reviews.parquet"
+    extractors = ["baseline"]
+    if resolve_path(cfg["aspects"]["transformer_model_dir"]).exists():
+        extractors.append("transformer")
 
-    if not rebuild and aspects_path.exists():
-        aspects = pd.read_parquet(aspects_path)
-        reviews = pd.read_parquet(reviews_path) if reviews_path.exists() else pd.DataFrame()
-        return reviews, aspects
+    sentiments = ["baseline"]
+    if importlib.util.find_spec("torch") is not None:
+        if resolve_path(cfg["sentiment"]["absa_finetuned_dir"]).exists():
+            sentiments.append(FINETUNED_ABSA)
+        sentiments.append(PRETRAINED_ABSA)
+    return extractors, sentiments
 
+
+@st.cache_data(show_spinner="Running the pipeline on the sample…")
+def build_live(extractor: str, sentiment: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Run the pipeline on the bundled sample with the selected models."""
+    cfg = deepcopy(load_config())
+    cfg["aspects"]["extractor"] = extractor
+    if sentiment == "baseline":
+        cfg["sentiment"]["aspect_model"] = "baseline"
+    else:
+        cfg["sentiment"]["aspect_model"] = "absa"
+        if sentiment == FINETUNED_ABSA:
+            cfg["sentiment"]["absa_model_name"] = str(
+                resolve_path(cfg["sentiment"]["absa_finetuned_dir"])
+            )
     result = run_pipeline(config=cfg)
     return result.reviews, result.aspects
+
+
+@st.cache_data(show_spinner="Loading processed outputs…")
+def load_processed() -> tuple[pd.DataFrame, pd.DataFrame]:
+    cfg = load_config()
+    processed = resolve_path(cfg["paths"]["data_processed"])
+    aspects = pd.read_parquet(processed / "aspects.parquet")
+    reviews_path = processed / "reviews.parquet"
+    reviews = pd.read_parquet(reviews_path) if reviews_path.exists() else pd.DataFrame()
+    return reviews, aspects
+
+
+def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
+    st.sidebar.header("Pipeline")
+    processed_exists = (
+        resolve_path(load_config()["paths"]["data_processed"]) / "aspects.parquet"
+    ).exists()
+
+    options = ["live sample"] + (["processed outputs"] if processed_exists else [])
+    source = st.sidebar.radio("Data", options, index=0)
+
+    if source == "processed outputs":
+        return load_processed()
+
+    extractors, sentiments = _model_options()
+    extractor = st.sidebar.selectbox("Aspect extractor", extractors, index=0)
+    sentiment = st.sidebar.selectbox("Aspect sentiment", sentiments, index=0)
+    if st.sidebar.button("↻ Re-run"):
+        build_live.clear()
+    return build_live(extractor, sentiment)
 
 
 def sidebar_filters(aspects: pd.DataFrame) -> dict:
@@ -162,14 +215,11 @@ def render_quotes(aspects: pd.DataFrame, group_by: str) -> None:
 def main() -> None:
     st.title("🔍 ReviewLens — Aspect-Based Review Intelligence")
     st.caption(
-        "Per-aspect sentiment beats a single review score. "
-        "Baseline slice: NLP noun-phrase aspects + VADER sentiment."
+        "Per-aspect sentiment beats a single review score. Switch the models in "
+        "the sidebar to watch the baseline and the transformer disagree."
     )
 
-    if st.sidebar.button("↻ Rebuild from sample"):
-        load_aspects.clear()
-
-    reviews, aspects = load_aspects()
+    reviews, aspects = load_data()
     if aspects.empty:
         st.warning("No aspect data available. Run the pipeline first.")
         return
