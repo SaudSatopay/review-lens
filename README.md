@@ -16,9 +16,10 @@
 
 <p>
   <img src="https://img.shields.io/badge/license-MIT-yellow?style=flat-square" alt="MIT License">
-  <img src="https://img.shields.io/badge/tests-40-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-52-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/code%20style-ruff-000000?style=flat-square" alt="Ruff">
   <img src="https://img.shields.io/badge/ABSA-deberta--v3--base-8b5cf6?style=flat-square" alt="Model">
+  <img src="https://img.shields.io/badge/SemEval--14_macro--F1-0.79_vs_0.59_VADER-success?style=flat-square" alt="SemEval-2014 results">
 </p>
 
 </div>
@@ -53,7 +54,9 @@
 </div>
 
 Only the cross-encoder — which reads the sentence **and the aspect together** — holds
-two opposite opinions inside one sentence. That gap *is* the project.
+two opposite opinions inside one sentence. That gap *is* the project — and on the
+**SemEval-2014** benchmark it measures **+18.5 to +21.7 macro-F1 points**
+([details ↓](#-evaluation--measured-on-semeval-2014-task-4)).
 
 > [!NOTE]
 > **12 of 18** reviews in the sample carry mixed per-aspect sentiment. A single score
@@ -215,12 +218,14 @@ review-lens/
 │   ├── sentiment/              # VADER baseline · transformer ABSA cross-encoder
 │   ├── clustering/             # theme grouping · MiniLM embeddings (next)
 │   ├── aggregate/              # distributions · rankings · quotes · trends
+│   ├── evaluation/             # SemEval-2014 downloader · parser · metrics · CLI
 │   └── pipeline.py             # end-to-end orchestration + CLI
 │
 ├── 📊 app/streamlit_app.py     # the dashboard
-├── 🔧 scripts/run_pipeline.py  # CLI (no install needed)
+├── 🔧 scripts/                 # run_pipeline · download_semeval · evaluate_semeval
+├── 📈 reports/                 # committed benchmark results (JSON)
 ├── 📓 notebooks/               # exploration
-├── ✅ tests/                   # 40 tests
+├── ✅ tests/                   # 52 tests
 ├── 🗃️ data/sample/             # tiny sample — pipeline runs out of the box
 └── ⚙️ config.yaml              # paths · models · thresholds
 ```
@@ -230,24 +235,64 @@ review-lens/
 ## ✅ Tests
 
 ```bash
-pytest                                        # 38 tests, ~0.5s (no model download)
+pytest                                        # 50 tests, <1s (no downloads, no network)
 REVIEWLENS_RUN_MODEL_TESTS=1 pytest           # + 2 tests that exercise the ABSA checkpoint
 ```
 
 Model-dependent tests are opt-in by design — a default `pytest` should never pull
-370 MB of weights.
+370 MB of weights. The SemEval parser and metrics are tested against tiny inline
+fixtures with hand-computed expectations, not the real data.
 
 <br>
 
-## 📏 Evaluation
+## 📏 Evaluation — measured on SemEval-2014 Task 4
 
-Planned against **SemEval-2014 Task 4** (Restaurants + Laptops), the standard ABSA benchmark.
+Gold test sets of the standard ABSA benchmark (Restaurants + Laptops), standard
+3-class setup (`conflict` gold labels dropped). Full numbers live in
+[`reports/semeval2014_results.json`](reports/semeval2014_results.json). Reproduce:
 
-| What | Metric | Compared against |
-|:--|:--|:--|
-| Aspect extraction | Span-level **F1** (`seqeval`) | Noun-phrase baseline |
-| Aspect sentiment | **Macro-F1** | VADER-on-sentence baseline |
-| End-to-end value | Mixed-review recovery rate | Document-level VADER |
+```bash
+python scripts/download_semeval.py     # ~2.4 MB from public research mirrors
+python scripts/evaluate_semeval.py     # extraction + both sentiment models
+```
+
+### 🎭 Aspect sentiment — gold aspect terms, macro-F1
+
+| Test set | 🥉 VADER (sentence-level) | 🥇 `deberta-v3-base-absa` | Δ |
+|:--|:--:|:--:|:--:|
+| **Restaurants** *(n=1,120)* | 0.608 | **0.793** | **+18.5 pts** |
+| **Laptops** *(n=638)* | 0.573 | **0.790** | **+21.7 pts** |
+
+Where the gap lives (per-class F1, Restaurants):
+
+| Class | 🥉 VADER | 🥇 ABSA | |
+|:--|:--:|:--:|:--|
+| positive | 0.860 | 0.901 | the easy majority class — everyone scores here |
+| negative | 0.572 | **0.823** | contrastive sentences sink VADER |
+| neutral | 0.393 | **0.655** | ≈ coin flip vs. nearly doubled |
+
+VADER survives on positive-heavy data and collapses exactly where per-aspect
+understanding matters: negative and neutral opinions inside mixed sentences.
+
+> [!NOTE]
+> The pretrained checkpoint's training mix includes the SemEval-2014 *train*
+> splits, so its test scores are an **optimistic upper bound**, not zero-shot.
+> Slice 3 fine-tunes our own model for a clean train/test story. The caveat is
+> recorded in the results JSON itself.
+
+### 🏷️ Aspect extraction — noun-phrase baseline
+
+| Test set | Precision | Recall | F1 |
+|:--|:--:|:--:|:--:|
+| **Restaurants** | 0.400 | 0.730 | **0.516** |
+| **Laptops** | 0.246 | 0.622 | **0.353** |
+
+Exactly the profile you'd expect from an unsupervised chunker: **high recall**
+(it finds most real aspects) at **low precision** (it also proposes noun phrases
+nobody has an opinion about). This is the number the fine-tuned BIO tagger
+(Slice 3) has to beat. Matching is case-insensitive exact term-set per sentence —
+the baseline emits no character offsets, so scores are comparable to, but not
+identical with, the official offset-based scorer.
 
 <br>
 
@@ -255,8 +300,8 @@ Planned against **SemEval-2014 Task 4** (Restaurants + Laptops), the standard AB
 
 - [x] **Slice 0 — Scaffold + runnable baseline** · ingest → aspects → sentiment → themes → dashboard → tests
 - [x] **Slice 1 — Transformer ABSA** · `deberta-v3-base-absa` cross-encoder, swappable via config/CLI
-- [ ] **Slice 2 — Evaluation harness** · SemEval-2014, extraction F1 + sentiment macro-F1
-- [ ] **Slice 3 — Fine-tuning** · train the BIO aspect tagger + ABSA classifier
+- [x] **Slice 2 — Evaluation harness** · SemEval-2014 measured: sentiment macro-F1 **0.79 vs 0.59** (VADER), extraction baseline F1 0.52/0.35
+- [ ] **Slice 3 — Fine-tuning** · train the BIO aspect tagger + ABSA classifier — must beat the Slice 2 baselines
 - [ ] **Slice 4 — Embedding clustering** · MiniLM + KMeans/HDBSCAN theme discovery
 - [ ] **Slice 5 — LLM executive summary** · optional, Ollama or API
 - [ ] **Slice 6 — Real Amazon/Yelp demo** + polish
