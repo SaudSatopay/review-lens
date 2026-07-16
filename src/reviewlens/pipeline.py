@@ -63,6 +63,20 @@ class PipelineResult:
         return paths
 
 
+def _extract_terms(texts: list[str], cfg: dict[str, Any]) -> list[list[str]]:
+    """One aspect-term list per sentence, via the configured extractor.
+
+    ``transformer`` batches all sentences through the fine-tuned BIO tagger;
+    imported lazily so the baseline path never requires torch.
+    """
+    if cfg["aspects"].get("extractor", "baseline") == "transformer":
+        from reviewlens.aspects.absa import get_aspect_extractor
+
+        model_dir = str(resolve_path(cfg["aspects"]["transformer_model_dir"]))
+        return get_aspect_extractor(model_dir).extract_batch(texts)
+    return [extract_aspects(text, cfg) for text in texts]
+
+
 def _score_aspect_rows(rows: list[dict], cfg: dict[str, Any]) -> None:
     """Attach ``aspect_sentiment`` / ``aspect_compound`` to each row, in place.
 
@@ -108,11 +122,11 @@ def run_pipeline(
     # 4. sentence split
     sentences = explode_sentences(reviews)
 
-    # 5. aspect extraction
+    # 5. aspect extraction (noun-phrase baseline or fine-tuned BIO tagger)
+    terms_per_sentence = _extract_terms(sentences["sentence"].tolist(), cfg)
     rows: list[dict] = []
-    for row in sentences.itertuples(index=False):
-        sentence = row.sentence
-        for aspect in extract_aspects(sentence, cfg):
+    for row, terms in zip(sentences.itertuples(index=False), terms_per_sentence, strict=True):
+        for aspect in terms:
             rows.append(
                 {
                     "review_id": row.review_id,
@@ -120,7 +134,7 @@ def run_pipeline(
                     "rating": row.rating,
                     "date": row.date,
                     "sentence_id": row.sentence_id,
-                    "sentence": sentence,
+                    "sentence": row.sentence,
                     "doc_sentiment": row.doc_sentiment,
                     "doc_compound": row.doc_compound,
                     "aspect": aspect,
@@ -145,7 +159,11 @@ def _print_report(result: PipelineResult, group_col: str, cfg: dict[str, Any]) -
     s_cfg = cfg["summary"]
     k, min_mentions = s_cfg["top_k_aspects"], s_cfg["min_mentions"]
 
-    print(f"\n=== ReviewLens pipeline ({cfg['sentiment']['aspect_model']}) ===")
+    extractor = cfg["aspects"].get("extractor", "baseline")
+    print(
+        f"\n=== ReviewLens pipeline (extractor={extractor}, "
+        f"sentiment={cfg['sentiment']['aspect_model']}) ==="
+    )
     print(f"Reviews processed : {len(result.reviews)}")
     print(f"Sentences         : {len(result.sentences)}")
     print(f"Aspect mentions   : {len(result.aspects)}")
@@ -189,6 +207,10 @@ def main(argv: list[str] | None = None) -> int:
         "--aspect-model", choices=["baseline", "absa"], default=None,
         help="Override sentiment.aspect_model: 'baseline' (VADER) or 'absa' (transformer).",
     )
+    parser.add_argument(
+        "--extractor", choices=["baseline", "transformer"], default=None,
+        help="Override aspects.extractor: 'baseline' (noun-phrase) or 'transformer' (BIO).",
+    )
     parser.add_argument("--no-save", action="store_true", help="Skip writing output files.")
     args = parser.parse_args(argv)
 
@@ -196,6 +218,8 @@ def main(argv: list[str] | None = None) -> int:
     cfg = deepcopy(load_config())
     if args.aspect_model:
         cfg["sentiment"]["aspect_model"] = args.aspect_model
+    if args.extractor:
+        cfg["aspects"]["extractor"] = args.extractor
 
     result = run_pipeline(source=args.input, config=cfg)
     _print_report(result, group_col=args.group_by, cfg=cfg)

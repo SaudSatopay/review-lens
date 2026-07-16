@@ -23,7 +23,10 @@ aspects:
   # Baseline noun-phrase extractor settings.
   min_term_length: 3
   max_term_words: 4          # keep noun phrases up to 4 tokens ("battery life")
-  extractor: baseline        # baseline | transformer (transformer = later slice)
+  # baseline    = NLTK noun-phrase chunking (no torch)
+  # transformer = fine-tuned BIO tagger — train it first: python scripts/train_extractor.py
+  extractor: baseline
+  transformer_model_dir: models/aspect-extractor
 
 sentiment:
   # VADER compound-score thresholds -> {positive, neutral, negative}.
@@ -33,7 +36,11 @@ sentiment:
   # absa     = transformer cross-encoder, true (sentence, aspect) -> polarity
   #            needs the ml extras: pip install -e ".[ml]"
   aspect_model: baseline
+  # Pretrained checkpoint (upper bound: its training mix includes SemEval-14 train).
   absa_model_name: yangheng/deberta-v3-base-absa-v1.1
+  # Our own fine-tune (clean train/test) — train it: python scripts/train_absa.py
+  # To use it in the pipeline, point absa_model_name at this directory.
+  absa_finetuned_dir: models/absa-classifier
 
 clustering:
   method: normalized         # normalized (baseline) | kmeans | hdbscan (later slice)
@@ -50,3 +57,20 @@ eval:
   results_path: reports/semeval2014_results.json
   drop_conflict: true        # standard 3-class setup: drop 'conflict' gold labels
   absa_batch_size: 16
+
+training:
+  # roberta-base rather than deberta-v3-base: deberta-v3's backward pass NaNs
+  # deterministically on transformers 5.6.x + torch 2.11 (CPU and GPU alike;
+  # forward/inference is unaffected), so it cannot be fine-tuned on this stack.
+  # roberta-base trains cleanly and is the documented alternative.
+  base_model: roberta-base
+  seed: 42
+  max_length: 128
+  extractor:                 # BIO token classification -> aspects.transformer_model_dir
+    epochs: 5
+    batch_size: 16
+    learning_rate: 2.0e-5
+  absa:                      # (sentence, aspect) -> polarity -> sentiment.absa_finetuned_dir
+    epochs: 4
+    batch_size: 32
+    learning_rate: 2.0e-5
