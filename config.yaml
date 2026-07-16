@@ -44,3 +44,9 @@ summary:
   top_k_aspects: 8           # how many aspects to feature as "loved" / "hated"
   min_mentions: 2            # ignore aspects seen fewer times than this
   quotes_per_aspect: 2
+
+eval:
+  semeval_dir: data/raw/semeval2014
+  results_path: reports/semeval2014_results.json
+  drop_conflict: true        # standard 3-class setup: drop 'conflict' gold labels
+  absa_batch_size: 16
