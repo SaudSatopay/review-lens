@@ -33,6 +33,20 @@ _NOISE_TERMS = {
 }
 
 
+def _tag(sentence: str) -> list[tuple[str, str]]:
+    """POS-tag a sentence, de-capitalizing a title-case sentence-initial token.
+
+    The tagger reads a capitalized first word as a proper noun, so "Great camera
+    …" tags ``Great`` as NNP and the noun grammar swallows it into the aspect
+    term ("great camera"). Lowercasing only a title-case leading token fixes that
+    while leaving acronyms ("GPS locks on quickly") and all-caps intact.
+    """
+    tokens = word_tokenize(str(sentence))
+    if tokens and tokens[0].istitle():
+        tokens[0] = tokens[0].lower()
+    return pos_tag(tokens)
+
+
 def _is_valid_term(term: str, min_len: int, max_words: int) -> bool:
     if len(term) < min_len:
         return False
@@ -61,8 +75,7 @@ def extract_aspects(
     max_words = cfg.get("max_term_words", 4)
 
     ensure_nltk_data()
-    tagged = pos_tag(word_tokenize(str(sentence)))
-    tree = _CHUNKER.parse(tagged)
+    tree = _CHUNKER.parse(_tag(sentence))
 
     seen: set[str] = set()
     aspects: list[str] = []
