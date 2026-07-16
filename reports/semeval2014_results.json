@@ -1,24 +1,40 @@
 {
   "meta": {
-    "generated_at": "2026-07-16T20:14:54+00:00",
+    "generated_at": "2026-07-16T21:33:26+00:00",
     "drop_conflict": true,
     "limit": null,
-    "caveat": "The pretrained ABSA checkpoint (yangheng/deberta-v3-base-absa-v1.1) was trained on a merged ABSA corpus that includes SemEval-2014 train splits; its test scores are an upper bound rather than a zero-shot measurement."
+    "caveat": "The pretrained ABSA checkpoint (yangheng/deberta-v3-base-absa-v1.1) was trained on a merged ABSA corpus that includes SemEval-2014 train splits; its test scores are an upper bound rather than a zero-shot measurement. The absa_finetuned model was trained on the official train splits only."
   },
   "restaurants": {
     "extraction": {
-      "precision": 0.3995,
-      "recall": 0.7301,
-      "f1": 0.5164,
-      "true_positives": 825,
-      "false_positives": 1240,
-      "false_negatives": 305,
-      "n_gold_terms": 1130,
-      "n_pred_terms": 2065,
-      "matching": "case-insensitive exact term-set per sentence (not offset-based)",
-      "extractor": "noun-phrase baseline",
-      "n_sentences": 800,
-      "elapsed_s": 1.0
+      "baseline": {
+        "precision": 0.3995,
+        "recall": 0.7301,
+        "f1": 0.5164,
+        "true_positives": 825,
+        "false_positives": 1240,
+        "false_negatives": 305,
+        "n_gold_terms": 1130,
+        "n_pred_terms": 2065,
+        "matching": "case-insensitive exact term-set per sentence (not offset-based)",
+        "extractor": "noun-phrase baseline",
+        "n_sentences": 800,
+        "elapsed_s": 1.1
+      },
+      "finetuned": {
+        "precision": 0.8952,
+        "recall": 0.915,
+        "f1": 0.905,
+        "true_positives": 1034,
+        "false_positives": 121,
+        "false_negatives": 96,
+        "n_gold_terms": 1130,
+        "n_pred_terms": 1155,
+        "matching": "case-insensitive exact term-set per sentence (not offset-based)",
+        "extractor": "fine-tuned BIO tagger (roberta-base)",
+        "n_sentences": 800,
+        "elapsed_s": 6.3
+      }
     },
     "sentiment": {
       "baseline": {
@@ -48,7 +64,7 @@
         "model": "VADER (sentence-level)",
         "elapsed_s": 0.1
       },
-      "absa": {
+      "absa_pretrained": {
         "n": 1120,
         "accuracy": 0.8366,
         "macro_f1": 0.7932,
@@ -73,24 +89,67 @@
           }
         },
         "model": "yangheng/deberta-v3-base-absa-v1.1",
-        "elapsed_s": 35.9
+        "elapsed_s": 5.0
+      },
+      "absa_finetuned": {
+        "n": 1120,
+        "accuracy": 0.8679,
+        "macro_f1": 0.7925,
+        "per_class": {
+          "negative": {
+            "precision": 0.8086,
+            "recall": 0.8622,
+            "f1": 0.8346,
+            "support": 196
+          },
+          "neutral": {
+            "precision": 0.7734,
+            "recall": 0.5051,
+            "f1": 0.6111,
+            "support": 196
+          },
+          "positive": {
+            "precision": 0.8991,
+            "recall": 0.967,
+            "f1": 0.9318,
+            "support": 728
+          }
+        },
+        "model": "C:\\Users\\USER\\Desktop\\Proj\\Hackathon\\NLP Project\\models\\absa-classifier",
+        "elapsed_s": 1.9
       }
     }
   },
   "laptops": {
     "extraction": {
-      "precision": 0.2463,
-      "recall": 0.6215,
-      "f1": 0.3528,
-      "true_positives": 404,
-      "false_positives": 1236,
-      "false_negatives": 246,
-      "n_gold_terms": 650,
-      "n_pred_terms": 1640,
-      "matching": "case-insensitive exact term-set per sentence (not offset-based)",
-      "extractor": "noun-phrase baseline",
-      "n_sentences": 800,
-      "elapsed_s": 0.8
+      "baseline": {
+        "precision": 0.2463,
+        "recall": 0.6215,
+        "f1": 0.3528,
+        "true_positives": 404,
+        "false_positives": 1236,
+        "false_negatives": 246,
+        "n_gold_terms": 650,
+        "n_pred_terms": 1640,
+        "matching": "case-insensitive exact term-set per sentence (not offset-based)",
+        "extractor": "noun-phrase baseline",
+        "n_sentences": 800,
+        "elapsed_s": 0.9
+      },
+      "finetuned": {
+        "precision": 0.8623,
+        "recall": 0.8385,
+        "f1": 0.8502,
+        "true_positives": 545,
+        "false_positives": 87,
+        "false_negatives": 105,
+        "n_gold_terms": 650,
+        "n_pred_terms": 632,
+        "matching": "case-insensitive exact term-set per sentence (not offset-based)",
+        "extractor": "fine-tuned BIO tagger (roberta-base)",
+        "n_sentences": 800,
+        "elapsed_s": 0.8
+      }
     },
     "sentiment": {
       "baseline": {
@@ -120,7 +179,7 @@
         "model": "VADER (sentence-level)",
         "elapsed_s": 0.0
       },
-      "absa": {
+      "absa_pretrained": {
         "n": 638,
         "accuracy": 0.8276,
         "macro_f1": 0.7902,
@@ -145,7 +204,34 @@
           }
         },
         "model": "yangheng/deberta-v3-base-absa-v1.1",
-        "elapsed_s": 17.0
+        "elapsed_s": 1.1
+      },
+      "absa_finetuned": {
+        "n": 638,
+        "accuracy": 0.8072,
+        "macro_f1": 0.769,
+        "per_class": {
+          "negative": {
+            "precision": 0.6726,
+            "recall": 0.8828,
+            "f1": 0.7635,
+            "support": 128
+          },
+          "neutral": {
+            "precision": 0.7559,
+            "recall": 0.568,
+            "f1": 0.6486,
+            "support": 169
+          },
+          "positive": {
+            "precision": 0.8921,
+            "recall": 0.8974,
+            "f1": 0.8947,
+            "support": 341
+          }
+        },
+        "model": "C:\\Users\\USER\\Desktop\\Proj\\Hackathon\\NLP Project\\models\\absa-classifier",
+        "elapsed_s": 0.8
       }
     }
   }
