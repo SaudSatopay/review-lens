@@ -29,8 +29,10 @@ sentiment:
   # VADER compound-score thresholds -> {positive, neutral, negative}.
   pos_threshold: 0.05
   neg_threshold: -0.05
-  aspect_model: baseline     # baseline (VADER) | absa (transformer, later slice)
-  # Strong pretrained ABSA baseline for the transformer slice.
+  # baseline = VADER on the aspect's sentence (fast, no torch)
+  # absa     = transformer cross-encoder, true (sentence, aspect) -> polarity
+  #            needs the ml extras: pip install -e ".[ml]"
+  aspect_model: baseline
   absa_model_name: yangheng/deberta-v3-base-absa-v1.1
 
 clustering:

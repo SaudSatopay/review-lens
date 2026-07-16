@@ -12,6 +12,7 @@ Run it::
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,32 @@ class PipelineResult:
         return paths
 
 
+def _score_aspect_rows(rows: list[dict], cfg: dict[str, Any]) -> None:
+    """Attach ``aspect_sentiment`` / ``aspect_compound`` to each row, in place.
+
+    Dispatches on ``sentiment.aspect_model``: ``baseline`` scores each aspect with
+    VADER on its sentence; ``absa`` runs the transformer cross-encoder, which is
+    batched (hence scoring every row at once rather than inside the extract loop).
+    """
+    if not rows:
+        return
+
+    if cfg["sentiment"].get("aspect_model", "baseline") == "absa":
+        # Imported here so the baseline path never requires torch.
+        from reviewlens.sentiment.transformer_absa import get_absa_model
+
+        model = get_absa_model(cfg["sentiment"]["absa_model_name"])
+        preds = model.predict_batch([(r["sentence"], r["aspect"]) for r in rows])
+    else:
+        preds = [score_aspect_sentiment(r["sentence"], r["aspect"], cfg) for r in rows]
+
+    # strict=True: a model returning the wrong number of predictions should be a
+    # loud error, not a silently half-scored table.
+    for row, (label, score) in zip(rows, preds, strict=True):
+        row["aspect_sentiment"] = label
+        row["aspect_compound"] = score
+
+
 def run_pipeline(
     source: str | Path | pd.DataFrame | None = None,
     config: dict[str, Any] | None = None,
@@ -81,12 +108,11 @@ def run_pipeline(
     # 4. sentence split
     sentences = explode_sentences(reviews)
 
-    # 5-6. aspect extraction + per-aspect sentiment
+    # 5. aspect extraction
     rows: list[dict] = []
     for row in sentences.itertuples(index=False):
         sentence = row.sentence
         for aspect in extract_aspects(sentence, cfg):
-            label, compound = score_aspect_sentiment(sentence, aspect, cfg)
             rows.append(
                 {
                     "review_id": row.review_id,
@@ -98,10 +124,11 @@ def run_pipeline(
                     "doc_sentiment": row.doc_sentiment,
                     "doc_compound": row.doc_compound,
                     "aspect": aspect,
-                    "aspect_sentiment": label,
-                    "aspect_compound": compound,
                 }
             )
+
+    # 6. per-aspect sentiment (VADER baseline or transformer ABSA)
+    _score_aspect_rows(rows, cfg)
 
     aspects = pd.DataFrame(rows)
     # 7. theme grouping (baseline)
@@ -118,7 +145,7 @@ def _print_report(result: PipelineResult, group_col: str, cfg: dict[str, Any]) -
     s_cfg = cfg["summary"]
     k, min_mentions = s_cfg["top_k_aspects"], s_cfg["min_mentions"]
 
-    print("\n=== ReviewLens baseline pipeline ===")
+    print(f"\n=== ReviewLens pipeline ({cfg['sentiment']['aspect_model']}) ===")
     print(f"Reviews processed : {len(result.reviews)}")
     print(f"Sentences         : {len(result.sentences)}")
     print(f"Aspect mentions   : {len(result.aspects)}")
@@ -158,10 +185,18 @@ def main(argv: list[str] | None = None) -> int:
         "--group-by", choices=["aspect", "theme"], default="theme",
         help="Grouping level for the printed summary (default: theme).",
     )
+    parser.add_argument(
+        "--aspect-model", choices=["baseline", "absa"], default=None,
+        help="Override sentiment.aspect_model: 'baseline' (VADER) or 'absa' (transformer).",
+    )
     parser.add_argument("--no-save", action="store_true", help="Skip writing output files.")
     args = parser.parse_args(argv)
 
-    cfg = load_config()
+    # Deep-copy: load_config() is cached and returns a shared dict.
+    cfg = deepcopy(load_config())
+    if args.aspect_model:
+        cfg["sentiment"]["aspect_model"] = args.aspect_model
+
     result = run_pipeline(source=args.input, config=cfg)
     _print_report(result, group_col=args.group_by, cfg=cfg)
 
