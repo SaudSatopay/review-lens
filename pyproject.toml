@@ -35,7 +35,6 @@ ml = [
     "accelerate>=0.26",
     "seqeval>=1.2.2",
     "sentence-transformers>=2.3",
-    "hdbscan>=0.8.33",
 ]
 dev = [
     "pytest>=7.4",
