@@ -1,6 +1,9 @@
 # Normalize line endings: store text as LF in the repository.
 * text=auto eol=lf
 
+# Windows batch files must stay CRLF — cmd.exe mis-parses goto labels on LF.
+*.bat text eol=crlf
+
 # Binary assets — never touch.
 *.parquet binary
 *.png binary

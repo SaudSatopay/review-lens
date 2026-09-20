@@ -133,6 +133,10 @@ cd review-lens
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 ```
 
+**Windows, zero commands:** double-click **`launch.bat`** — first run installs
+the core stack and opens the dashboard in your browser; every later run goes
+straight to launch.
+
 <details open>
 <summary><b>Baseline — no torch, installs and runs in seconds</b></summary>
 
