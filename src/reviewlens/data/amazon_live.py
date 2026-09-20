@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,8 +72,18 @@ def product_url(url: str) -> str:
 def fetch_html(url: str, timeout: int = 30) -> str:
     """One GET with browser-like headers. Raises on bot-check interstitials."""
     request = urllib.request.Request(product_url(url), headers=_HEADERS)
-    with urllib.request.urlopen(request, timeout=timeout) as resp:
-        html = resp.read().decode("utf-8", errors="replace")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        if exc.code in (403, 503):
+            raise RuntimeError(
+                "Amazon declined this server's address (bot protection, "
+                f"HTTP {exc.code}). This works reliably from a personal "
+                "connection — run the app locally (launch.bat) and retry; "
+                "on a hosted demo the live fetch is best-effort."
+            ) from exc
+        raise RuntimeError(f"Amazon returned HTTP {exc.code} for that link.") from exc
     if any(marker.lower() in html.lower() for marker in _BOT_CHECK_MARKERS):
         raise RuntimeError(
             "Amazon served a bot-check page instead of the product. Wait a "

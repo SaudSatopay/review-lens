@@ -8,8 +8,11 @@
 
 *Stop scoring reviews. Start reading them.*
 
+**Live demo → [reviewlens-app.streamlit.app](https://reviewlens-app.streamlit.app)**
+
 <br>
 
+<a href="https://reviewlens-app.streamlit.app"><img src="https://img.shields.io/badge/live-reviewlens--app.streamlit.app-191511?style=flat-square&labelColor=191511&color=C34A24" alt="Live demo"></a>
 <img src="https://img.shields.io/badge/python-3.10+-191511?style=flat-square&labelColor=191511&color=6E2231" alt="Python 3.10+">
 <img src="https://img.shields.io/badge/PyTorch_·_Transformers-fine--tuned-191511?style=flat-square&labelColor=191511&color=6E2231" alt="PyTorch · Transformers">
 <img src="https://img.shields.io/badge/Streamlit_·_Plotly-dashboard-191511?style=flat-square&labelColor=191511&color=6E2231" alt="Streamlit · Plotly">
@@ -179,7 +182,9 @@ python scripts/fetch_amazon.py https://www.amazon.in/dp/B097JJ2CK6
 One polite GET to the public product page returns the product's photo, brand,
 price, rating stats (average, total ratings, the 5→1 star histogram) and its
 on-page top reviews (typically 8–13 without signing in — the honest ceiling of
-an anonymous fetch), saved in the canonical schema. The dashboard has a whole
+an anonymous fetch), saved in the canonical schema. Works reliably from a
+personal connection; on the hosted demo Amazon's bot protection usually
+declines datacenter IPs, and the app says so politely. The dashboard has a whole
 **Amazon Lookup page** for this: paste a link on the procurement desk, get the
 product dossier (photo, price, rating anatomy, the raw reviews), browse the
 case files of everything fetched so far, and jump straight into the journal's
