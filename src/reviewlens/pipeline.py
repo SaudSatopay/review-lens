@@ -66,14 +66,21 @@ class PipelineResult:
 def _extract_terms(texts: list[str], cfg: dict[str, Any]) -> list[list[str]]:
     """One aspect-term list per sentence, via the configured extractor.
 
-    ``transformer`` batches all sentences through the fine-tuned BIO tagger;
-    imported lazily so the baseline path never requires torch.
+    ``transformer`` batches all sentences through the fine-tuned BIO tagger,
+    ``crf`` through the classical CRF sequence labeler; both are imported
+    lazily so the baseline path never pays for them.
     """
-    if cfg["aspects"].get("extractor", "baseline") == "transformer":
+    kind = cfg["aspects"].get("extractor", "baseline")
+    if kind == "transformer":
         from reviewlens.aspects.absa import get_aspect_extractor
 
         model_dir = str(resolve_path(cfg["aspects"]["transformer_model_dir"]))
         return get_aspect_extractor(model_dir).extract_batch(texts)
+    if kind == "crf":
+        from reviewlens.aspects.crf import get_crf_extractor
+
+        model_path = str(resolve_path(cfg["aspects"]["crf_model_path"]))
+        return get_crf_extractor(model_path).extract_batch(texts)
     return [extract_aspects(text, cfg) for text in texts]
 
 
@@ -106,12 +113,18 @@ def _score_aspect_rows(rows: list[dict], cfg: dict[str, Any]) -> None:
     if not rows:
         return
 
-    if cfg["sentiment"].get("aspect_model", "baseline") == "absa":
+    aspect_model = cfg["sentiment"].get("aspect_model", "baseline")
+    if aspect_model == "absa":
         # Imported here so the baseline path never requires torch.
         from reviewlens.sentiment.transformer_absa import get_absa_model
 
         model = get_absa_model(_absa_model_name(cfg))
         preds = model.predict_batch([(r["sentence"], r["aspect"]) for r in rows])
+    elif aspect_model == "nb":
+        from reviewlens.sentiment.naive_bayes import get_nb_model
+
+        nb = get_nb_model(str(resolve_path(cfg["sentiment"]["nb_model_path"])))
+        preds = nb.predict_batch([(r["sentence"], r["aspect"]) for r in rows])
     else:
         preds = [score_aspect_sentiment(r["sentence"], r["aspect"], cfg) for r in rows]
 
@@ -141,8 +154,19 @@ def run_pipeline(
     # 4. sentence split
     sentences = explode_sentences(reviews)
 
-    # 5. aspect extraction (noun-phrase baseline or fine-tuned BIO tagger)
+    # 5. aspect extraction (noun-phrase baseline, CRF, or fine-tuned BIO tagger)
     terms_per_sentence = _extract_terms(sentences["sentence"].tolist(), cfg)
+
+    # 5b. optional discourse step: pronoun-initial sentences with no aspects
+    # inherit the review's most recent aspect ("The battery is huge. It drains…").
+    if cfg["aspects"].get("anaphora", False):
+        from reviewlens.aspects.anaphora import resolve_pronoun_aspects
+
+        terms_per_sentence = resolve_pronoun_aspects(
+            sentences["review_id"].tolist(),
+            sentences["sentence"].tolist(),
+            terms_per_sentence,
+        )
     rows: list[dict] = []
     for row, terms in zip(sentences.itertuples(index=False), terms_per_sentence, strict=True):
         for aspect in terms:
@@ -224,12 +248,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Grouping level for the printed summary (default: theme).",
     )
     parser.add_argument(
-        "--aspect-model", choices=["baseline", "absa"], default=None,
-        help="Override sentiment.aspect_model: 'baseline' (VADER) or 'absa' (transformer).",
+        "--aspect-model", choices=["baseline", "nb", "absa"], default=None,
+        help="Override sentiment.aspect_model: 'baseline' (VADER), 'nb' (Naive "
+        "Bayes), or 'absa' (transformer).",
     )
     parser.add_argument(
-        "--extractor", choices=["baseline", "transformer"], default=None,
-        help="Override aspects.extractor: 'baseline' (noun-phrase) or 'transformer' (BIO).",
+        "--extractor", choices=["baseline", "crf", "transformer"], default=None,
+        help="Override aspects.extractor: 'baseline' (noun-phrase), 'crf' "
+        "(classical sequence labeler), or 'transformer' (BIO fine-tune).",
+    )
+    parser.add_argument(
+        "--anaphora", action="store_true",
+        help="Resolve pronoun-initial sentences to the review's most recent "
+        "aspect (heuristic discourse step; off by default).",
     )
     parser.add_argument(
         "--absa-checkpoint", choices=["pretrained", "finetuned"], default=None,
@@ -237,8 +268,9 @@ def main(argv: list[str] | None = None) -> int:
         "hub checkpoint or our own fine-tune from scripts/train_absa.py.",
     )
     parser.add_argument(
-        "--clustering", choices=["normalized", "kmeans", "hdbscan"], default=None,
-        help="Override clustering.method: keyword mapping or MiniLM embedding clusters.",
+        "--clustering", choices=["normalized", "wordnet", "kmeans", "hdbscan"], default=None,
+        help="Override clustering.method: keyword mapping, WordNet "
+        "synonym/hyponym grouping, or MiniLM embedding clusters.",
     )
     parser.add_argument(
         "--n-clusters", type=int, default=None,
@@ -261,6 +293,8 @@ def main(argv: list[str] | None = None) -> int:
         cfg["aspects"]["extractor"] = args.extractor
     if args.absa_checkpoint:
         cfg["sentiment"]["absa_checkpoint"] = args.absa_checkpoint
+    if args.anaphora:
+        cfg["aspects"]["anaphora"] = True
     if args.clustering:
         cfg["clustering"]["method"] = args.clustering
     if args.n_clusters:

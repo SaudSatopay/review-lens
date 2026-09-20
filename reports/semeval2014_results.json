@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-07-16T21:33:26+00:00",
+    "generated_at": "2026-09-20T18:10:32+00:00",
     "drop_conflict": true,
     "limit": null,
     "caveat": "The pretrained ABSA checkpoint (yangheng/deberta-v3-base-absa-v1.1) was trained on a merged ABSA corpus that includes SemEval-2014 train splits; its test scores are an upper bound rather than a zero-shot measurement. The absa_finetuned model was trained on the official train splits only."
@@ -34,6 +34,20 @@
         "extractor": "fine-tuned BIO tagger (roberta-base)",
         "n_sentences": 800,
         "elapsed_s": 6.3
+      },
+      "crf": {
+        "precision": 0.8164,
+        "recall": 0.7398,
+        "f1": 0.7762,
+        "true_positives": 836,
+        "false_positives": 188,
+        "false_negatives": 294,
+        "n_gold_terms": 1130,
+        "n_pred_terms": 1024,
+        "matching": "case-insensitive exact term-set per sentence (not offset-based)",
+        "extractor": "CRF sequence labeler (sklearn-crfsuite)",
+        "n_sentences": 800,
+        "elapsed_s": 34.1
       }
     },
     "sentiment": {
@@ -117,6 +131,33 @@
         },
         "model": "C:\\Users\\USER\\Desktop\\Proj\\Hackathon\\NLP Project\\models\\absa-classifier",
         "elapsed_s": 1.9
+      },
+      "nb": {
+        "n": 1120,
+        "accuracy": 0.7527,
+        "macro_f1": 0.589,
+        "per_class": {
+          "negative": {
+            "precision": 0.6538,
+            "recall": 0.5204,
+            "f1": 0.5795,
+            "support": 196
+          },
+          "neutral": {
+            "precision": 0.6615,
+            "recall": 0.2194,
+            "f1": 0.3295,
+            "support": 196
+          },
+          "positive": {
+            "precision": 0.7764,
+            "recall": 0.9588,
+            "f1": 0.858,
+            "support": 728
+          }
+        },
+        "model": "Multinomial Naive Bayes (bag-of-words)",
+        "elapsed_s": 0.1
       }
     }
   },
@@ -149,6 +190,20 @@
         "extractor": "fine-tuned BIO tagger (roberta-base)",
         "n_sentences": 800,
         "elapsed_s": 0.8
+      },
+      "crf": {
+        "precision": 0.7988,
+        "recall": 0.6169,
+        "f1": 0.6962,
+        "true_positives": 401,
+        "false_positives": 101,
+        "false_negatives": 249,
+        "n_gold_terms": 650,
+        "n_pred_terms": 502,
+        "matching": "case-insensitive exact term-set per sentence (not offset-based)",
+        "extractor": "CRF sequence labeler (sklearn-crfsuite)",
+        "n_sentences": 800,
+        "elapsed_s": 33.5
       }
     },
     "sentiment": {
@@ -232,6 +287,33 @@
         },
         "model": "C:\\Users\\USER\\Desktop\\Proj\\Hackathon\\NLP Project\\models\\absa-classifier",
         "elapsed_s": 0.8
+      },
+      "nb": {
+        "n": 638,
+        "accuracy": 0.6489,
+        "macro_f1": 0.5713,
+        "per_class": {
+          "negative": {
+            "precision": 0.4293,
+            "recall": 0.6875,
+            "f1": 0.5285,
+            "support": 128
+          },
+          "neutral": {
+            "precision": 0.662,
+            "recall": 0.2781,
+            "f1": 0.3917,
+            "support": 169
+          },
+          "positive": {
+            "precision": 0.7707,
+            "recall": 0.8182,
+            "f1": 0.7937,
+            "support": 341
+          }
+        },
+        "model": "Multinomial Naive Bayes (bag-of-words)",
+        "elapsed_s": 0.0
       }
     }
   }

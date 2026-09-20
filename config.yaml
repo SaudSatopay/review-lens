@@ -24,18 +24,26 @@ aspects:
   min_term_length: 3
   max_term_words: 4          # keep noun phrases up to 4 tokens ("battery life")
   # baseline    = NLTK noun-phrase chunking (no torch)
+  # crf         = classical CRF sequence labeler — train: python scripts/train_classical.py
   # transformer = fine-tuned BIO tagger — train it first: python scripts/train_extractor.py
   extractor: baseline
   transformer_model_dir: models/aspect-extractor
+  crf_model_path: models/crf-extractor.joblib
+  # Heuristic pronoun anaphora resolution (discourse): an aspect-less sentence
+  # starting with it/they/this... inherits the review's most recent aspect.
+  # Off by default so published benchmark numbers stay reproducible.
+  anaphora: false
 
 sentiment:
   # VADER compound-score thresholds -> {positive, neutral, negative}.
   pos_threshold: 0.05
   neg_threshold: -0.05
   # baseline = VADER on the aspect's sentence (fast, no torch)
+  # nb       = Multinomial Naive Bayes bag-of-words — train: python scripts/train_classical.py
   # absa     = transformer cross-encoder, true (sentence, aspect) -> polarity
   #            needs the ml extras: pip install -e ".[ml]"
   aspect_model: baseline
+  nb_model_path: models/nb-sentiment.joblib
   # Which ABSA weights to load when aspect_model = absa:
   #   pretrained = absa_model_name below (upper bound: its training mix includes
   #                SemEval-14 train)
@@ -46,8 +54,9 @@ sentiment:
   absa_finetuned_dir: models/absa-classifier
 
 clustering:
-  # normalized = keyword mapping (no downloads) | kmeans / hdbscan = MiniLM
-  # embeddings clustered into data-discovered themes (needs the ml extras).
+  # normalized = keyword mapping (no downloads) | wordnet = synonym/hyponym
+  # grouping via WordNet (no torch) | kmeans / hdbscan = MiniLM embeddings
+  # clustered into data-discovered themes (needs the ml extras).
   method: normalized
   embedding_model: sentence-transformers/all-MiniLM-L6-v2
   n_clusters: 8              # used when method = kmeans

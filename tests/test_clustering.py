@@ -109,6 +109,16 @@ def test_embed_and_cluster_edge_cases():
         embed_and_cluster(["battery", "screen"], method="dbscan", embed_fn=_fake_embed)
 
 
+def test_wordnet_theme_map_merges_synonyms_keeps_unknowns():
+    from reviewlens.clustering.themes import wordnet_theme_map
+
+    # "car" and "auto" share a WordNet synset; a brand word stays itself.
+    mapping = wordnet_theme_map(["car", "car", "auto", "zorbtron"])
+    assert mapping["auto"] == mapping["car"] == "car"  # named by frequency
+    assert mapping["zorbtron"] == "zorbtron"
+    assert wordnet_theme_map([]) == {}
+
+
 def test_add_theme_column_dispatches_on_config(monkeypatch):
     monkeypatch.setattr(themes, "_embed_terms", lambda batch, model_name: _fake_embed(batch))
     df = pd.DataFrame({"aspect": ["battery", "charging", "display", "screen"]})

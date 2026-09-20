@@ -81,6 +81,7 @@ MAX_GROUPS_SHOWN = 24  # real corpora surface hundreds of themes; show the top s
 
 FINETUNED_ABSA = "absa — our fine-tune"
 PRETRAINED_ABSA = "absa — pretrained checkpoint"
+NB_SENTIMENT = "nb — naïve bayes"
 
 st.set_page_config(page_title="ReviewLens", page_icon="🔍", layout="wide")
 
@@ -215,6 +216,39 @@ def render_section(num: str, title: str, note: str = "", stand: str = "") -> Non
     )
 
 
+def render_product_strip(meta: dict) -> None:
+    """Rating stats of a live-fetched Amazon product: title, average, histogram."""
+    histogram = {int(k): v for k, v in (meta.get("histogram") or {}).items()}
+    bars = "".join(
+        f"""<div class="rl-product__row"><span class="rl-product__stars">{stars}★</span>
+              <div class="rl-product__bar"><div style="width:{histogram[stars]}%"></div></div>
+              <span class="rl-product__pct">{histogram[stars]}%</span></div>"""
+        for stars in sorted(histogram, reverse=True)
+    )
+    count = meta.get("ratings_count")
+    count_text = f"{count:,} ratings on Amazon" if count else "ratings on Amazon"
+    average = meta.get("average_rating")
+    st.markdown(
+        f"""
+        <div class="rl-product">
+          <div class="rl-product__left">
+            <div class="rl-kicker">Live from Amazon ·
+              {html_lib.escape(str(meta.get('asin', '')))}</div>
+            <div class="rl-product__title">{html_lib.escape(str(meta.get('title', '')))}</div>
+            <div class="rl-product__sub">{count_text} · the page's
+            {meta.get('fetched_reviews', '—')} public top reviews analyzed below</div>
+          </div>
+          <div class="rl-product__right">
+            <div class="rl-product__avg">{average if average is not None else '—'}<span>/5
+            </span></div>
+            <div class="rl-product__bars">{bars}</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_overview(reviews: pd.DataFrame, aspects: pd.DataFrame) -> None:
     """The figures row — rules and type, no boxes."""
     n_reviews = int(reviews["review_id"].nunique()) if not reviews.empty else 0
@@ -244,36 +278,58 @@ def _model_options() -> tuple[list[str], list[str], list[str]]:
     """Model choices that are actually available in this environment."""
     cfg = load_config()
     extractors = ["baseline"]
+    if resolve_path(cfg["aspects"]["crf_model_path"]).exists():
+        extractors.append("crf")
     if resolve_path(cfg["aspects"]["transformer_model_dir"]).exists():
         extractors.append("transformer")
 
     sentiments = ["baseline"]
+    if resolve_path(cfg["sentiment"]["nb_model_path"]).exists():
+        sentiments.append(NB_SENTIMENT)
     if importlib.util.find_spec("torch") is not None:
         if resolve_path(cfg["sentiment"]["absa_finetuned_dir"]).exists():
             sentiments.append(FINETUNED_ABSA)
         sentiments.append(PRETRAINED_ABSA)
 
-    themes = ["normalized"]
+    themes = ["normalized", "wordnet"]
     if importlib.util.find_spec("sentence_transformers") is not None:
         themes += ["kmeans", "hdbscan"]
     return extractors, sentiments, themes
 
 
 def _demo_csvs() -> dict[str, str]:
-    """Real-data demo CSVs written by scripts/download_reviews.py, if any."""
+    """Demo/fetched CSVs from download_reviews.py and fetch_amazon.py, if any."""
     demo_dir = resolve_path(load_config()["paths"]["data_raw"]) / "amazon"
     return {f"live: {p.stem}": str(p) for p in sorted(demo_dir.glob("*_reviews.csv"))}
 
 
+def _product_meta(source: str | None) -> dict | None:
+    """Stats saved next to an Amazon-fetched CSV (title, rating, histogram)."""
+    if not source:
+        return None
+    meta_path = pathlib.Path(str(source).replace("_reviews.csv", "_meta.json"))
+    if not meta_path.exists():
+        return None
+    import json
+
+    try:
+        return json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
 @st.cache_data(show_spinner="Running the pipeline…")
 def build_live(
-    extractor: str, sentiment: str, clustering: str, source: str | None
+    extractor: str, sentiment: str, clustering: str, anaphora: bool, source: str | None
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Run the pipeline on the sample (or a demo CSV) with the selected models."""
     cfg = deepcopy(load_config())
     cfg["aspects"]["extractor"] = extractor
+    cfg["aspects"]["anaphora"] = anaphora
     cfg["clustering"]["method"] = clustering
-    if sentiment == "baseline":
+    if sentiment == NB_SENTIMENT:
+        cfg["sentiment"]["aspect_model"] = "nb"
+    elif sentiment == "baseline":
         cfg["sentiment"]["aspect_model"] = "baseline"
     else:
         cfg["sentiment"]["aspect_model"] = "absa"
@@ -298,7 +354,33 @@ def _side_head(text: str) -> None:
     st.sidebar.markdown(f'<div class="rl-side-head">{text}</div>', unsafe_allow_html=True)
 
 
-def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
+def _amazon_fetch_box() -> None:
+    """Paste an Amazon product link -> fetch its public reviews + stats."""
+    _side_head("Fetch from Amazon")
+    url = st.sidebar.text_input(
+        "Product URL", placeholder="https://www.amazon.in/dp/…",
+        help="Fetches the public product page once: rating stats plus its "
+        "top reviews (typically 8–10 without signing in).",
+    )
+    if st.sidebar.button("Fetch reviews") and url.strip():
+        from reviewlens.data.amazon_live import save_fetch
+
+        dest = resolve_path(load_config()["paths"]["data_raw"]) / "amazon"
+        try:
+            with st.spinner("Fetching product page…"):
+                csv_path, stats = save_fetch(url.strip(), dest)
+        except (ValueError, RuntimeError, OSError) as exc:
+            st.sidebar.error(str(exc))
+        else:
+            st.session_state["data_source"] = f"live: {csv_path.stem}"
+            st.sidebar.success(
+                f"Fetched {stats['fetched_reviews']} reviews · "
+                f"★ {stats.get('average_rating', '—')}"
+            )
+            st.rerun()
+
+
+def load_data() -> tuple[pd.DataFrame, pd.DataFrame, dict | None]:
     st.sidebar.markdown(
         """
         <div class="rl-wordmark">Review<br>Lens<span class="rl-dot">.</span></div>
@@ -311,20 +393,30 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
         resolve_path(load_config()["paths"]["data_processed"]) / "aspects.parquet"
     ).exists()
 
-    demos = _demo_csvs()  # real Amazon data from scripts/download_reviews.py
+    demos = _demo_csvs()  # downloaded corpora + live Amazon fetches
     options = ["live sample", *demos] + (["processed outputs"] if processed_exists else [])
-    source = st.sidebar.radio("Data", options, index=0)
+    source = st.sidebar.radio("Data", options, index=0, key="data_source")
+    meta = _product_meta(demos.get(source))
 
     if source == "processed outputs":
-        return load_processed()
+        reviews, aspects = load_processed()
+        _amazon_fetch_box()
+        return reviews, aspects, None
 
     extractors, sentiments, themes = _model_options()
     extractor = st.sidebar.selectbox("Aspect extractor", extractors, index=0)
     sentiment = st.sidebar.selectbox("Aspect sentiment", sentiments, index=0)
     clustering = st.sidebar.selectbox("Theme grouping", themes, index=0)
+    anaphora = st.sidebar.toggle(
+        "Resolve pronouns", value=False,
+        help="Aspect-less sentences starting with it/they/this inherit the "
+        "review's most recent aspect (heuristic anaphora resolution).",
+    )
     if st.sidebar.button("↻ Re-run"):
         build_live.clear()
-    return build_live(extractor, sentiment, clustering, demos.get(source))
+    reviews, aspects = build_live(extractor, sentiment, clustering, anaphora, demos.get(source))
+    _amazon_fetch_box()
+    return reviews, aspects, meta
 
 
 def sidebar_filters(aspects: pd.DataFrame) -> dict:
@@ -604,7 +696,7 @@ def main() -> None:
     render_masthead()
     render_hero()
 
-    reviews, aspects = load_data()
+    reviews, aspects, product_meta = load_data()
     if aspects.empty:
         st.warning("No aspect data available. Run the pipeline first.")
         return
@@ -612,6 +704,8 @@ def main() -> None:
     f = sidebar_filters(aspects)
     filtered = apply_filters(aspects, f)
 
+    if product_meta:
+        render_product_strip(product_meta)
     render_overview(reviews, filtered)
     render_distribution(filtered, f["group_by"], f["min_mentions"])
     render_contradictions(filtered)

@@ -36,8 +36,8 @@ from reviewlens.evaluation.metrics import extraction_scores, sentiment_scores
 from reviewlens.evaluation.semeval import DATASETS, load_semeval
 from reviewlens.sentiment.aspect_sentiment import score_aspect_sentiment
 
-EXTRACTORS = ("baseline", "finetuned")
-SENTIMENT_MODELS = ("baseline", "absa_pretrained", "absa_finetuned")
+EXTRACTORS = ("baseline", "crf", "finetuned")
+SENTIMENT_MODELS = ("baseline", "nb", "absa_pretrained", "absa_finetuned")
 
 # The pretrained checkpoint's own training mix includes SemEval-2014 train data,
 # so treat its test scores as an optimistic upper bound, not a fair zero-shot
@@ -72,6 +72,12 @@ def evaluate_extraction(
         model_dir = str(resolve_path(cfg["aspects"]["transformer_model_dir"]))
         terms_per_sentence = get_aspect_extractor(model_dir).extract_batch(texts)
         extractor_name = f"fine-tuned BIO tagger ({cfg['training']['base_model']})"
+    elif extractor_kind == "crf":
+        from reviewlens.aspects.crf import get_crf_extractor
+
+        model_path = str(resolve_path(cfg["aspects"]["crf_model_path"]))
+        terms_per_sentence = get_crf_extractor(model_path).extract_batch(texts)
+        extractor_name = "CRF sequence labeler (sklearn-crfsuite)"
     elif extractor_kind == "baseline":
         terms_per_sentence = [
             extract_aspects(text, cfg)
@@ -137,6 +143,12 @@ def evaluate_sentiment(
     if model_kind in ("absa_pretrained", "absa_finetuned"):
         y_pred = _predict_absa(pairs, model_kind, cfg)
         model_name = _absa_model_path(model_kind, cfg)
+    elif model_kind == "nb":
+        from reviewlens.sentiment.naive_bayes import get_nb_model
+
+        nb = get_nb_model(str(resolve_path(cfg["sentiment"]["nb_model_path"])))
+        y_pred = [label for label, _ in nb.predict_batch(pairs)]
+        model_name = "Multinomial Naive Bayes (bag-of-words)"
     elif model_kind == "baseline":
         y_pred = [
             score_aspect_sentiment(text, term, cfg)[0]
@@ -160,10 +172,19 @@ def _available(cfg: dict[str, Any]) -> tuple[list[str], list[str]]:
     """
     extractor_dir = resolve_path(cfg["aspects"]["transformer_model_dir"])
     finetuned_absa_dir = resolve_path(cfg["sentiment"]["absa_finetuned_dir"])
+    crf_path = resolve_path(cfg["aspects"]["crf_model_path"])
+    nb_path = resolve_path(cfg["sentiment"]["nb_model_path"])
 
-    extractors = ["baseline"] + (["finetuned"] if extractor_dir.exists() else [])
-    models = ["baseline", "absa_pretrained"] + (
-        ["absa_finetuned"] if finetuned_absa_dir.exists() else []
+    extractors = (
+        ["baseline"]
+        + (["crf"] if crf_path.exists() else [])
+        + (["finetuned"] if extractor_dir.exists() else [])
+    )
+    models = (
+        ["baseline"]
+        + (["nb"] if nb_path.exists() else [])
+        + ["absa_pretrained"]
+        + (["absa_finetuned"] if finetuned_absa_dir.exists() else [])
     )
     return extractors, models
 

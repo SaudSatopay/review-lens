@@ -17,6 +17,8 @@ _RESOURCES: list[tuple[str, str]] = [
     ("punkt_tab", "tokenizers/punkt_tab"),
     ("averaged_perceptron_tagger", "taggers/averaged_perceptron_tagger"),
     ("averaged_perceptron_tagger_eng", "taggers/averaged_perceptron_tagger_eng"),
+    ("wordnet", "corpora/wordnet"),          # lexical database for wordnet themes
+    ("omw-1.4", "corpora/omw-1.4"),
 ]
 
 

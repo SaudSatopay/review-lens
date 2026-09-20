@@ -110,6 +110,28 @@ a { color: #6E2231; }
 .rl-specimen__moral { font-family: 'Spline Sans Mono', monospace; font-size: 0.62rem;
   letter-spacing: 0.12em; text-transform: uppercase; color: #6E2231; margin-top: 0.6rem; }
 
+/* ---- live Amazon product strip --------------------------------------------- */
+.rl-product { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2.2rem;
+  align-items: center; background: #FCF9F1; border: 1px solid rgba(25,21,17,0.16);
+  padding: 1.05rem 1.3rem; margin-bottom: 1.4rem;
+  animation: rl-rise .55s both; }
+.rl-product__title { font-family: 'Instrument Serif', serif; font-size: 1.22rem;
+  color: #191511; margin-top: 0.35rem; line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.rl-product__sub { font-size: 0.8rem; color: #99907F; margin-top: 0.25rem; }
+.rl-product__right { display: flex; gap: 1.2rem; align-items: center; }
+.rl-product__avg { font-family: Gloock, serif; font-size: 2.6rem; color: #191511; }
+.rl-product__avg span { font-size: 1rem; color: #99907F; }
+.rl-product__bars { min-width: 190px; }
+.rl-product__row { display: flex; align-items: center; gap: 0.5rem;
+  font-family: 'Spline Sans Mono', monospace; font-size: 0.62rem; color: #6B6154;
+  padding: 1.5px 0; }
+.rl-product__stars { width: 1.7rem; }
+.rl-product__pct { width: 2.2rem; text-align: right; }
+.rl-product__bar { flex: 1; height: 5px; background: rgba(25,21,17,0.10); }
+.rl-product__bar div { height: 100%; background: #6E2231; }
+@media (max-width: 900px) { .rl-product { grid-template-columns: 1fr; gap: 1rem; } }
+
 /* ---- figures row (KPIs, no boxes — rules and type) ------------------------ */
 .rl-figures { display: grid; grid-template-columns: repeat(4, 1fr);
   border-top: 2px solid #191511; border-bottom: 1px solid rgba(25,21,17,0.25);

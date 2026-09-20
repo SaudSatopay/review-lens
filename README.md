@@ -17,7 +17,7 @@
 <br>
 <img src="https://img.shields.io/badge/sentiment_macro--F1-0.79_vs_0.59_VADER-191511?style=flat-square&labelColor=191511&color=0F8265" alt="SemEval-2014 sentiment">
 <img src="https://img.shields.io/badge/extraction_F1-0.91_vs_0.52_baseline-191511?style=flat-square&labelColor=191511&color=0F8265" alt="SemEval-2014 extraction">
-<img src="https://img.shields.io/badge/tests-79_·_no_network-191511?style=flat-square&labelColor=191511&color=0F8265" alt="Tests">
+<img src="https://img.shields.io/badge/tests-96_·_no_network-191511?style=flat-square&labelColor=191511&color=0F8265" alt="Tests">
 
 <br><br>
 
@@ -88,15 +88,21 @@ flowchart LR
     style SERVE fill:#FCF9F1,stroke:#6E2231,color:#191511
 ```
 
-Every stage ships a **fast baseline** first, then a **transformer** upgrade
-that has to beat a number, not a vibe:
+Every stage climbs a ladder — rule-based, then classical-statistical, then
+neural — and each rung has to beat a number, not a vibe:
 
-| Stage | Baseline (offline, seconds) | Upgrade | |
-|:--|:--|:--|:--:|
-| **Aspect extraction** | Noun-phrase chunking (NLTK POS + grammar) | Fine-tuned **BIO** token classifier — ours | ✓ |
-| **Aspect sentiment** | VADER on the aspect's sentence | ABSA cross-encoder — pretrained **or ours** | ✓ |
-| **Theme clustering** | Keyword + normalization grouping | **MiniLM** embeddings → KMeans / HDBSCAN | ✓ |
-| **Summary** | Top loved / hated ranking | **LLM** executive summary (Ollama / API) | ✓ |
+| Stage | Rule-based / lexicon | Classical (trained, no torch) | Neural | |
+|:--|:--|:--|:--|:--:|
+| **Aspect extraction** | Noun-phrase chunking (NLTK POS + grammar) | **CRF** sequence labeler (BIO) | Fine-tuned **RoBERTa BIO** tagger — ours | ✓ |
+| **Aspect sentiment** | VADER on the aspect's sentence | **Naïve Bayes** bag-of-words | ABSA cross-encoder — pretrained **or ours** | ✓ |
+| **Theme clustering** | Keyword + normalization | **WordNet** synonym/hyponym grouping | **MiniLM** embeddings → KMeans / HDBSCAN | ✓ |
+| **Summary** | Top loved / hated ranking | — | **LLM** executive summary (Ollama / API) | ✓ |
+
+Plus an optional discourse step: `--anaphora` resolves pronoun-initial
+sentences to the review's most recent aspect (*"The battery is huge. **It**
+drains in an hour."*), and a PMI collocation miner covers the classic
+word-level analysis. The full course-module mapping lives in
+[`docs/SYLLABUS.md`](docs/SYLLABUS.md).
 
 <br>
 
@@ -138,6 +144,40 @@ python -c "from reviewlens.nltk_setup import ensure_nltk_data; ensure_nltk_data(
 python scripts/run_pipeline.py --group-by theme   # CLI report
 streamlit run app/streamlit_app.py                # the dashboard
 ```
+
+</details>
+
+<details>
+<summary><b>Classical rungs — CRF extractor + Naïve Bayes sentiment, no torch</b></summary>
+
+```bash
+python scripts/download_semeval.py       # once
+python scripts/train_classical.py        # both models, seconds on CPU
+
+python scripts/run_pipeline.py --extractor crf --aspect-model nb
+python scripts/evaluate_semeval.py --extractors crf --models nb
+```
+
+The statistical middle of each ladder: a CRF sequence labeler (classic feature
+templates — word shape, affixes, POS, ±1 context) and a Multinomial Naïve
+Bayes over uni/bigrams with an aspect marker token. Both measured on the same
+gold sets as everything else.
+
+</details>
+
+<details>
+<summary><b>Paste an Amazon link — live reviews and their stats</b></summary>
+
+```bash
+python scripts/fetch_amazon.py https://www.amazon.in/dp/B097JJ2CK6
+```
+
+One polite GET to the public product page returns the product's rating stats
+(average, total ratings, the 5→1 star histogram) and its on-page top reviews
+(typically 8–10 without signing in — the honest ceiling of an anonymous
+fetch), saved in the canonical schema. The dashboard has the same feature in
+its sidebar: paste a link, hit *Fetch reviews*, and the product appears as a
+data source with a rating-stats strip above the aspect analysis.
 
 </details>
 
@@ -278,6 +318,11 @@ Two things the real data makes obvious:
   the noun-phrase baseline emits **16.1k** — the same precision-vs-noise gap
   SemEval measured, live.)
 
+And for any *single* product: paste its Amazon link into the dashboard sidebar
+(or `scripts/fetch_amazon.py`) and ReviewLens fetches the public page's rating
+stats — average, total ratings, the star histogram — plus its top reviews, and
+runs the full aspect analysis on them, product strip and all.
+
 <br>
 
 <a id="evaluation"></a>
@@ -298,24 +343,30 @@ python scripts/evaluate_semeval.py     # full benchmark, all models
 
 ### Aspect extraction — F1, gold test sets
 
-| Test set | Noun-phrase chunker | **Our fine-tuned BIO tagger** | Δ |
+| Test set | Noun-phrase chunker | CRF sequence labeler | **Our fine-tuned BIO tagger** |
 |:--|:--:|:--:|:--:|
-| **Restaurants** | 0.516 *(P 0.40 / R 0.73)* | **0.905** *(P 0.90 / R 0.92)* | **+39 pts** |
-| **Laptops** | 0.353 *(P 0.25 / R 0.62)* | **0.850** *(P 0.86 / R 0.84)* | **+50 pts** |
+| **Restaurants** | 0.516 *(P 0.40 / R 0.73)* | 0.776 *(P 0.82 / R 0.74)* | **0.905** *(P 0.90 / R 0.92)* |
+| **Laptops** | 0.353 *(P 0.25 / R 0.62)* | 0.696 *(P 0.80 / R 0.62)* | **0.850** *(P 0.86 / R 0.84)* |
 
-The chunker's profile is classic unsupervised extraction: decent recall, poor
-precision (it proposes noun phrases nobody has an opinion about). The fine-tune
-(`roberta-base`, 5 epochs on the combined train splits) fixes precisely that.
+The textbook ladder, measured: the chunker has classic unsupervised recall
+with poor precision (it proposes noun phrases nobody has an opinion about);
+the CRF's hand-crafted features buy back most of the precision; the fine-tune
+(`roberta-base`, 5 epochs on the combined train splits) closes the rest.
 Matching is case-insensitive exact term-set per sentence — the baseline emits no
 character offsets, so scores are comparable to, but not identical with, the
 official offset-based scorer.
 
 ### Aspect sentiment — gold aspect terms, macro-F1 (accuracy)
 
-| Test set | VADER | Pretrained checkpoint¹ | **Our fine-tune²** |
-|:--|:--:|:--:|:--:|
-| **Restaurants** *(n=1,120)* | 0.608 *(0.733)* | 0.793 *(0.837)* | **0.792** *(**0.868**)* |
-| **Laptops** *(n=638)* | 0.573 *(0.625)* | 0.790 *(0.828)* | **0.769** *(0.807)* |
+| Test set | VADER | Naïve Bayes | Pretrained checkpoint¹ | **Our fine-tune²** |
+|:--|:--:|:--:|:--:|:--:|
+| **Restaurants** *(n=1,120)* | 0.608 *(0.733)* | 0.589 *(0.753)* | 0.793 *(0.837)* | **0.792** *(**0.868**)* |
+| **Laptops** *(n=638)* | 0.573 *(0.625)* | 0.571 *(0.649)* | 0.790 *(0.828)* | **0.769** *(0.807)* |
+
+Naïve Bayes is the honest middle rung: supervision buys it *accuracy* over
+VADER (majority-class wins) but not macro-F1 — a bag of words still cannot
+scope "great" to one aspect and not another. Only the contextual cross-encoder
+moves both numbers at once.
 
 ¹ `yangheng/deberta-v3-base-absa-v1.1` — its training mix **includes the
 SemEval-2014 train splits** (plus other ABSA corpora), so treat its scores as an
@@ -352,10 +403,10 @@ review-lens/
 ├── src/reviewlens/
 │   ├── config.py               # loads config.yaml — single source of truth
 │   ├── nltk_setup.py           # one-shot NLTK corpora bootstrap
-│   ├── data/                   # ingest · clean · sentence-split · Amazon demo converter
-│   ├── aspects/                # noun-phrase baseline · fine-tuned BIO tagger
-│   ├── sentiment/              # VADER baseline · transformer ABSA cross-encoder
-│   ├── clustering/             # keyword themes · MiniLM → KMeans / HDBSCAN
+│   ├── data/                   # ingest · clean · split · Amazon corpus + live fetch
+│   ├── aspects/                # chunker · CRF · BIO tagger · anaphora · PMI collocations
+│   ├── sentiment/              # VADER · Naïve Bayes · transformer ABSA cross-encoder
+│   ├── clustering/             # keyword · WordNet · MiniLM → KMeans / HDBSCAN
 │   ├── aggregate/              # distributions · rankings · quotes · trends · LLM summary
 │   ├── evaluation/             # SemEval-2014 downloader · parser · metrics · CLI
 │   ├── training/               # BIO alignment · example builders · both fine-tunes
@@ -364,9 +415,9 @@ review-lens/
 ├── app/                        # the dashboard (streamlit_app.py + style.css)
 ├── scripts/                    # run_pipeline · download_* · train_* · evaluate
 ├── reports/                    # committed benchmark results (JSON)
-├── docs/                       # the screenshots on this page
+├── docs/                       # screenshots + the syllabus mapping (SYLLABUS.md)
 ├── notebooks/                  # exploration
-├── tests/                      # 79 tests
+├── tests/                      # 96 tests
 ├── data/sample/                # tiny sample — pipeline runs out of the box
 ├── models/                     # fine-tuned weights land here (git-ignored)
 └── config.yaml                 # paths · models · thresholds
@@ -377,15 +428,17 @@ review-lens/
 ## № 08 — Tests
 
 ```bash
-pytest                                        # 77 tests, <4s (no downloads, no network)
+pytest                                        # 94 tests, <10s (no downloads, no network)
 REVIEWLENS_RUN_MODEL_TESTS=1 pytest           # + 2 tests that exercise the ABSA checkpoint
 ```
 
 Model-dependent tests are opt-in by design — a default `pytest` should never pull
 370 MB of weights. The SemEval parser and metrics are tested against tiny inline
-fixtures with hand-computed expectations, not the real data. The embedding
-clustering is tested with hand-placed fake vectors (real KMeans/HDBSCAN, no
-MiniLM download), and the LLM step through an injected transport (no network).
+fixtures with hand-computed expectations; the embedding clustering with
+hand-placed fake vectors (real KMeans/HDBSCAN, no MiniLM download); the LLM step
+through an injected transport; the CRF and Naïve Bayes by training in-test on
+tiny synthetic corpora; and the Amazon parser against a synthetic page
+mirroring both of Amazon's markup dialects — all without touching the network.
 
 <br>
 
@@ -398,6 +451,7 @@ MiniLM download), and the LLM step through an injected transport (no network).
 - [x] **Slice 4 — Embedding clustering** · MiniLM + KMeans/HDBSCAN theme discovery, swappable via `--clustering`; clusters auto-named after their most frequent term
 - [x] **Slice 5 — LLM executive summary** · optional `--llm-summary`, Ollama or any OpenAI-compatible API, stats-digest grounded, degrades gracefully
 - [x] **Slice 6 — Real Amazon demo** + polish · 500 real reviews through the full fine-tuned stack: **62% mixed**, themes discovered that no keyword list contained
+- [x] **Slice 7 — The classical stack + live Amazon** · CRF extraction F1 **0.78 / 0.70** and Naïve Bayes sentiment measured as the middle rungs; WordNet themes, PMI collocations, heuristic anaphora resolution ([syllabus map](docs/SYLLABUS.md)); paste-an-Amazon-link fetch with rating stats in the dashboard
 
 <br>
 

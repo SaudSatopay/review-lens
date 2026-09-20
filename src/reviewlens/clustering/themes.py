@@ -184,6 +184,79 @@ def embed_and_cluster(
     return {t: theme_of_norm[norm_of[t]] for t in norm_of}
 
 
+# --------------------------------------------------------------------------- #
+# WordNet grouping (synonymy + direct hyponymy — lexical semantics, no vectors)
+# --------------------------------------------------------------------------- #
+
+
+def wordnet_theme_map(terms: Iterable[str]) -> dict[str, str]:
+    """Group terms via WordNet synonymy / direct hyponymy -> ``{term: theme}``.
+
+    Two normalized terms merge when they share a synset (synonyms: ``car`` /
+    ``auto``) or when one's synset is a *direct* hypernym of the other's
+    (``puppy`` folds into ``dog``). Groups are named after their most frequent
+    member (mention-weighted), like the embedding clusters. Terms WordNet does
+    not know keep their own name — brand words survive untouched.
+    """
+    from reviewlens.nltk_setup import ensure_nltk_data
+
+    ensure_nltk_data()
+    from nltk.corpus import wordnet as wn
+
+    terms = [str(t) for t in terms]
+    if not terms:
+        return {}
+
+    norm_of = {t: normalize_term(t) for t in set(terms)}
+    counts = Counter(norm_of[t] for t in terms)
+    unique = sorted(counts)
+
+    def _synsets(term: str):
+        return wn.synsets(term.replace(" ", "_"), pos=wn.NOUN)
+
+    # Union-find over unique normalized terms.
+    parent = {u: u for u in unique}
+
+    def _find(a: str) -> str:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    def _union(a: str, b: str) -> None:
+        ra, rb = _find(a), _find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    synset_owner: dict[str, str] = {}      # synset name -> first term seen with it
+    hypernym_owner: dict[str, str] = {}    # direct-hypernym synset name -> term
+    syns_of = {u: _synsets(u) for u in unique}
+
+    for term in unique:
+        for syn in syns_of[term]:
+            if syn.name() in synset_owner:  # shared synset => synonyms
+                _union(synset_owner[syn.name()], term)
+            else:
+                synset_owner[syn.name()] = term
+            for hyper in syn.hypernyms():
+                hypernym_owner.setdefault(hyper.name(), term)
+
+    for term in unique:  # term's synset is another term's direct hypernym
+        for syn in syns_of[term]:
+            if syn.name() in hypernym_owner and hypernym_owner[syn.name()] != term:
+                _union(term, hypernym_owner[syn.name()])
+
+    groups: dict[str, list[str]] = {}
+    for u in unique:
+        groups.setdefault(_find(u), []).append(u)
+    theme_of_norm = {
+        member: _label_for(members, counts)
+        for members in groups.values()
+        for member in members
+    }
+    return {t: theme_of_norm[norm_of[t]] for t in norm_of}
+
+
 def add_theme_column(
     df: pd.DataFrame,
     aspect_col: str = "aspect",
@@ -194,7 +267,8 @@ def add_theme_column(
 
     Dispatches on ``clustering.method``: ``normalized`` (default) maps terms
     through :func:`assign_theme`; ``kmeans`` / ``hdbscan`` run
-    :func:`embed_and_cluster` over the column's terms.
+    :func:`embed_and_cluster`; ``wordnet`` groups by synonymy / hyponymy via
+    :func:`wordnet_theme_map`.
     """
     out = df.copy()
     if out.empty:
@@ -215,6 +289,8 @@ def add_theme_column(
             min_cluster_size=cfg.get("min_cluster_size", 2),
         )
         out[theme_col] = out[aspect_col].map(mapping)
+    elif method == "wordnet":
+        out[theme_col] = out[aspect_col].map(wordnet_theme_map(out[aspect_col].tolist()))
     else:
         out[theme_col] = out[aspect_col].map(assign_theme)
     return out
