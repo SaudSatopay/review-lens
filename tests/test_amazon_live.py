@@ -20,6 +20,12 @@ from reviewlens.data.amazon_live import (
 _PAGE = """
 <html><body>
 <span id="productTitle">  Acme Blender 3000,   1200W </span>
+<a id="bylineInfo" href="/stores/x">Visit the Acme Store</a>
+<img id="landingImage" src="data:image/png;base64,xxxx"
+     data-a-dynamic-image='{"https://m.media-amazon.com/images/I/x._SY355_.jpg":[355,355],"https://m.media-amazon.com/images/I/x._SX466_.jpg":[466,466]}'>
+<div id="corePriceDisplay_desktop_feature_div">
+  <span class="a-price"><span class="a-offscreen">₹709.00</span></span>
+</div>
 <span data-hook="rating-out-of-text">4.2 out of 5</span>
 <span id="acrCustomerReviewText" aria-label="17,134 Reviews">(17,134)</span>
 <a aria-label="58 percent of reviews have 5 stars"></a>
@@ -68,6 +74,10 @@ def test_parse_product_page_stats_and_reviews():
     stats, reviews = parse_product_page(_PAGE)
 
     assert stats["title"] == "Acme Blender 3000, 1200W"
+    assert stats["brand"] == "Acme"
+    assert stats["price"] == "₹709.00"
+    # largest entry of the dynamic-image map, never the base64 src placeholder
+    assert stats["image_url"] == "https://m.media-amazon.com/images/I/x._SX466_.jpg"
     assert stats["average_rating"] == 4.2
     assert stats["ratings_count"] == 17134
     assert stats["histogram"] == {5: 58, 4: 22, 3: 10, 2: 3, 1: 7}

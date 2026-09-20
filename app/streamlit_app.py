@@ -216,21 +216,42 @@ def render_section(num: str, title: str, note: str = "", stand: str = "") -> Non
     )
 
 
-def render_product_strip(meta: dict) -> None:
-    """Rating stats of a live-fetched Amazon product: title, average, histogram."""
+def _histogram_rows(meta: dict) -> str:
     histogram = {int(k): v for k, v in (meta.get("histogram") or {}).items()}
-    bars = "".join(
+    return "".join(
         f"""<div class="rl-product__row"><span class="rl-product__stars">{stars}★</span>
               <div class="rl-product__bar"><div style="width:{histogram[stars]}%"></div></div>
               <span class="rl-product__pct">{histogram[stars]}%</span></div>"""
         for stars in sorted(histogram, reverse=True)
     )
+
+
+def _stars(rating: float | None) -> str:
+    if rating is None:
+        return ""
+    full = int(round(rating))
+    return "★" * full + "☆" * (5 - full)
+
+
+def _photo_html(meta: dict, css_class: str) -> str:
+    url = meta.get("image_url")
+    if not url:
+        return ""
+    return (
+        f'<div class="{css_class}"><img src="{html_lib.escape(str(url))}" '
+        f'alt="{html_lib.escape(str(meta.get("title", "product photo")))}"></div>'
+    )
+
+
+def render_product_strip(meta: dict) -> None:
+    """Rating stats of a live-fetched Amazon product: photo, title, histogram."""
     count = meta.get("ratings_count")
     count_text = f"{count:,} ratings on Amazon" if count else "ratings on Amazon"
     average = meta.get("average_rating")
     st.markdown(
         f"""
         <div class="rl-product">
+          {_photo_html(meta, "rl-product__photo")}
           <div class="rl-product__left">
             <div class="rl-kicker">Live from Amazon ·
               {html_lib.escape(str(meta.get('asin', '')))}</div>
@@ -241,7 +262,7 @@ def render_product_strip(meta: dict) -> None:
           <div class="rl-product__right">
             <div class="rl-product__avg">{average if average is not None else '—'}<span>/5
             </span></div>
-            <div class="rl-product__bars">{bars}</div>
+            <div class="rl-product__bars">{_histogram_rows(meta)}</div>
           </div>
         </div>
         """,
@@ -354,40 +375,7 @@ def _side_head(text: str) -> None:
     st.sidebar.markdown(f'<div class="rl-side-head">{text}</div>', unsafe_allow_html=True)
 
 
-def _amazon_fetch_box() -> None:
-    """Paste an Amazon product link -> fetch its public reviews + stats."""
-    _side_head("Fetch from Amazon")
-    url = st.sidebar.text_input(
-        "Product URL", placeholder="https://www.amazon.in/dp/…",
-        help="Fetches the public product page once: rating stats plus its "
-        "top reviews (typically 8–10 without signing in).",
-    )
-    if st.sidebar.button("Fetch reviews") and url.strip():
-        from reviewlens.data.amazon_live import save_fetch
-
-        dest = resolve_path(load_config()["paths"]["data_raw"]) / "amazon"
-        try:
-            with st.spinner("Fetching product page…"):
-                csv_path, stats = save_fetch(url.strip(), dest)
-        except (ValueError, RuntimeError, OSError) as exc:
-            st.sidebar.error(str(exc))
-        else:
-            st.session_state["data_source"] = f"live: {csv_path.stem}"
-            st.sidebar.success(
-                f"Fetched {stats['fetched_reviews']} reviews · "
-                f"★ {stats.get('average_rating', '—')}"
-            )
-            st.rerun()
-
-
 def load_data() -> tuple[pd.DataFrame, pd.DataFrame, dict | None]:
-    st.sidebar.markdown(
-        """
-        <div class="rl-wordmark">Review<br>Lens<span class="rl-dot">.</span></div>
-        <div class="rl-wordmark-sub">every aspect, its own verdict</div>
-        """,
-        unsafe_allow_html=True,
-    )
     _side_head("Pipeline")
     processed_exists = (
         resolve_path(load_config()["paths"]["data_processed"]) / "aspects.parquet"
@@ -400,7 +388,6 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame, dict | None]:
 
     if source == "processed outputs":
         reviews, aspects = load_processed()
-        _amazon_fetch_box()
         return reviews, aspects, None
 
     extractors, sentiments, themes = _model_options()
@@ -415,7 +402,6 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame, dict | None]:
     if st.sidebar.button("↻ Re-run"):
         build_live.clear()
     reviews, aspects = build_live(extractor, sentiment, clustering, anaphora, demos.get(source))
-    _amazon_fetch_box()
     return reviews, aspects, meta
 
 
@@ -691,8 +677,9 @@ def render_footer() -> None:
 
 
 # ---------------------------------------------------------------------------
-def main() -> None:
-    _inject_css()
+# Page 1 — the journal (the analysis)
+# ---------------------------------------------------------------------------
+def page_journal() -> None:
     render_masthead()
     render_hero()
 
@@ -713,6 +700,215 @@ def main() -> None:
     render_quotes(filtered, f["group_by"])
     render_llm_summary(filtered, f["group_by"])
     render_footer()
+
+
+# ---------------------------------------------------------------------------
+# Page 2 — the procurement desk (Amazon lookup)
+# ---------------------------------------------------------------------------
+def _amazon_dir() -> pathlib.Path:
+    return resolve_path(load_config()["paths"]["data_raw"]) / "amazon"
+
+
+def _load_case_files() -> list[dict]:
+    """Every fetched product's meta, newest first."""
+    import json
+
+    metas = []
+    for path in sorted(
+        _amazon_dir().glob("amazon_*_meta.json"),
+        key=lambda p: p.stat().st_mtime, reverse=True,
+    ):
+        try:
+            metas.append(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+    return metas
+
+
+def _analyze_in_journal(asin: str) -> None:
+    st.session_state["data_source"] = f"live: amazon_{asin}_reviews"
+    st.switch_page(PAGE_JOURNAL)
+
+
+def render_dossier(meta: dict) -> None:
+    """The product, in full: photo, title, brand, price, rating anatomy."""
+    asin = html_lib.escape(str(meta.get("asin", "")))
+    count = meta.get("ratings_count")
+    average = meta.get("average_rating")
+    brand = meta.get("brand")
+    price = meta.get("price")
+    facts = [f"ASIN {asin}"]
+    if brand:
+        facts.append(html_lib.escape(str(brand)))
+    if count:
+        facts.append(f"{count:,} ratings")
+    facts.append(f"{meta.get('fetched_reviews', '—')} reviews fetched")
+    price_html = (
+        f'<div class="rl-dossier__price">{html_lib.escape(str(price))}</div>' if price else ""
+    )
+    st.markdown(
+        f"""
+        <div class="rl-dossier">
+          {_photo_html(meta, "rl-dossier__photo")}
+          <div class="rl-dossier__info">
+            <div class="rl-kicker">The dossier</div>
+            <div class="rl-dossier__title">{html_lib.escape(str(meta.get('title', '')))}</div>
+            <div class="rl-dossier__facts">{' · '.join(facts)}</div>
+            {price_html}
+            <a class="rl-dossier__link" href="{html_lib.escape(str(meta.get('url', '#')))}"
+               target="_blank" rel="noopener">view on amazon ↗</a>
+          </div>
+          <div class="rl-dossier__stats">
+            <div class="rl-product__avg">{average if average is not None else '—'}<span>/5
+            </span></div>
+            <div class="rl-dossier__stars">{_stars(average)}</div>
+            <div class="rl-product__bars">{_histogram_rows(meta)}</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_fetched_reviews(asin: str) -> None:
+    csv_path = _amazon_dir() / f"amazon_{asin}_reviews.csv"
+    if not csv_path.exists():
+        return
+    reviews = pd.read_csv(csv_path)
+    render_section(
+        "B", "What the page says", f"{len(reviews)} public top reviews",
+        "The raw material — every review the product page shows without "
+        "signing in, before the pipeline reads it.",
+    )
+    cols = st.columns(2, gap="large")
+    for i, row in reviews.iterrows():
+        with cols[i % 2]:
+            stars = _stars(row["rating"] if pd.notna(row["rating"]) else None)
+            date = "" if pd.isna(row.get("date")) else str(row["date"])
+            st.markdown(
+                f"""<div class="rl-quote rl-quote--plain">
+                     <p class="rl-quote__text">{html_lib.escape(str(row['text']))}</p>
+                     <div class="rl-quote__meta">
+                       <span class="rl-quote__starline">{stars}</span>
+                       <span>{date}</span>
+                     </div>
+                   </div>""",
+                unsafe_allow_html=True,
+            )
+
+
+def render_case_files(metas: list[dict], current_asin: str | None) -> None:
+    others = [m for m in metas if m.get("asin") != current_asin]
+    if not others:
+        return
+    render_section(
+        "C", "Case files", f"{len(metas)} products on record",
+        "Everything fetched so far — reopen a dossier or send it to the journal.",
+    )
+    columns = st.columns(3, gap="medium")
+    for i, meta in enumerate(others):
+        asin = str(meta.get("asin", ""))
+        with columns[i % 3]:
+            title = html_lib.escape(str(meta.get("title", "")))
+            st.markdown(
+                f"""<div class="rl-casecard">
+                     {_photo_html(meta, "rl-casecard__photo")}
+                     <div class="rl-casecard__title">{title}</div>
+                     <div class="rl-casecard__meta">★ {meta.get('average_rating', '—')} ·
+                       {meta.get('fetched_reviews', '—')} reviews ·
+                       {html_lib.escape(str(meta.get('price') or ''))}</div>
+                   </div>""",
+                unsafe_allow_html=True,
+            )
+            if st.button("Open dossier", key=f"open_{asin}"):
+                st.session_state["lookup_asin"] = asin
+                st.rerun()
+
+
+def page_amazon() -> None:
+    render_masthead()
+    st.markdown(
+        """
+        <div class="rl-hero rl-hero--single">
+          <div class="rl-hero__left">
+            <div class="rl-kicker">The procurement desk</div>
+            <h1>Point it at any product<span class="rl-dot">.</span></h1>
+            <p class="rl-dek">Paste an Amazon link. One polite fetch of the public
+            page returns the rating anatomy — average, histogram, count — and its
+            top reviews, ready for the full aspect reading.</p>
+            <div class="rl-rules">
+              <div class="rl-rule"></div><div class="rl-rule rl-rule--thin"></div>
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.form("amazon_lookup", border=False):
+        col_input, col_button = st.columns([5, 1], gap="small", vertical_alignment="bottom")
+        url = col_input.text_input(
+            "Amazon product URL", placeholder="https://www.amazon.in/dp/B097JJ2CK6",
+        )
+        submitted = col_button.form_submit_button("Fetch")
+
+    if submitted and url.strip():
+        from reviewlens.data.amazon_live import save_fetch
+
+        try:
+            with st.spinner("Fetching the product page…"):
+                _, stats = save_fetch(url.strip(), _amazon_dir())
+        except (ValueError, RuntimeError, OSError) as exc:
+            st.error(str(exc))
+        else:
+            st.session_state["lookup_asin"] = stats["asin"]
+
+    metas = _load_case_files()
+    current_asin = st.session_state.get("lookup_asin") or (
+        metas[0].get("asin") if metas else None
+    )
+    current = next((m for m in metas if m.get("asin") == current_asin), None)
+
+    if current:
+        render_section(
+            "A", "The product", "fresh from the page",
+            "What Amazon's own page discloses about this product, verbatim.",
+        )
+        render_dossier(current)
+        if st.button("Read the full aspect analysis in the journal →"):
+            _analyze_in_journal(str(current["asin"]))
+        render_fetched_reviews(str(current["asin"]))
+    else:
+        st.caption("No products fetched yet — paste a link above to open the first dossier.")
+
+    render_case_files(metas, current_asin)
+    render_footer()
+
+
+# ---------------------------------------------------------------------------
+PAGE_JOURNAL = st.Page(page_journal, title="The Journal", url_path="journal", default=True)
+PAGE_AMAZON = st.Page(page_amazon, title="Amazon Lookup", url_path="amazon")
+
+
+def _sidebar_shell() -> None:
+    """Wordmark + hand-styled navigation, on every page."""
+    st.sidebar.markdown(
+        """
+        <div class="rl-wordmark">Review<br>Lens<span class="rl-dot">.</span></div>
+        <div class="rl-wordmark-sub">every aspect, its own verdict</div>
+        """,
+        unsafe_allow_html=True,
+    )
+    _side_head("Pages")
+    st.sidebar.page_link(PAGE_JOURNAL, label="The Journal")
+    st.sidebar.page_link(PAGE_AMAZON, label="Amazon Lookup")
+
+
+def main() -> None:
+    _inject_css()
+    navigation = st.navigation([PAGE_JOURNAL, PAGE_AMAZON], position="hidden")
+    _sidebar_shell()
+    navigation.run()
 
 
 if __name__ == "__main__":

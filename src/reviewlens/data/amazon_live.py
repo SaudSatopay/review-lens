@@ -44,7 +44,8 @@ _BOT_CHECK_MARKERS = ("Robot Check", "Enter the characters you see below", "capt
 _BOILERPLATE_RE = re.compile(
     r"(?:(?:brief|full) content visible, double tap to read (?:full|brief) content\.?"
     r"|the media could not be loaded\.?"
-    r"|videos? for this product)",
+    r"|videos? for this product"
+    r"|read more\s+read less)",  # the expander link pair, never real prose
     re.IGNORECASE,
 )
 
@@ -90,6 +91,52 @@ def _text(node) -> str:
 def _first_float(text: str) -> float | None:
     match = re.search(r"(\d+(?:[.,]\d+)?)", str(text))
     return float(match.group(1).replace(",", ".")) if match else None
+
+
+def _extract_image(soup) -> str | None:
+    """Main product photo URL — largest entry of the dynamic-image map.
+
+    Amazon inlines a base64 placeholder into ``src`` and keeps the real URLs
+    in ``data-a-dynamic-image`` (a ``{url: [w, h]}`` JSON) with a full-res
+    fallback in ``data-old-hires``.
+    """
+    node = soup.select_one("#landingImage") or soup.select_one("#imgBlkFront")
+    if not node:
+        return None
+    dynamic = node.get("data-a-dynamic-image")
+    if dynamic:
+        try:
+            candidates = json.loads(dynamic)
+            if candidates:
+                return max(candidates, key=lambda u: candidates[u][0])
+        except (ValueError, TypeError, IndexError):
+            pass
+    hires = node.get("data-old-hires")
+    if hires:
+        return hires
+    src = node.get("src")
+    return src if src and not src.startswith("data:") else None
+
+
+def _extract_brand(soup) -> str | None:
+    """Brand from the byline: "Visit the Safari Store" / "Brand: Safari"."""
+    text = _text(soup.select_one("#bylineInfo"))
+    if not text:
+        return None
+    text = re.sub(r"^(?:visit the|brand:)\s*", "", text, flags=re.IGNORECASE)
+    return re.sub(r"\s*store$", "", text, flags=re.IGNORECASE).strip() or None
+
+
+def _extract_price(soup) -> str | None:
+    """Displayed price string ("₹709.00"), from the buy-box when present."""
+    for selector in (
+        "#corePriceDisplay_desktop_feature_div .a-price .a-offscreen",
+        ".a-price .a-offscreen",
+    ):
+        text = _text(soup.select_one(selector))
+        if text:
+            return text
+    return None
 
 
 def parse_product_page(html: str) -> tuple[dict[str, Any], pd.DataFrame]:
@@ -143,6 +190,9 @@ def parse_product_page(html: str) -> tuple[dict[str, Any], pd.DataFrame]:
 
     stats = {
         "title": title,
+        "brand": _extract_brand(soup),
+        "price": _extract_price(soup),
+        "image_url": _extract_image(soup),
         "average_rating": average,
         "ratings_count": ratings_count,
         "histogram": histogram,

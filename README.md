@@ -172,12 +172,14 @@ gold sets as everything else.
 python scripts/fetch_amazon.py https://www.amazon.in/dp/B097JJ2CK6
 ```
 
-One polite GET to the public product page returns the product's rating stats
-(average, total ratings, the 5→1 star histogram) and its on-page top reviews
-(typically 8–10 without signing in — the honest ceiling of an anonymous
-fetch), saved in the canonical schema. The dashboard has the same feature in
-its sidebar: paste a link, hit *Fetch reviews*, and the product appears as a
-data source with a rating-stats strip above the aspect analysis.
+One polite GET to the public product page returns the product's photo, brand,
+price, rating stats (average, total ratings, the 5→1 star histogram) and its
+on-page top reviews (typically 8–13 without signing in — the honest ceiling of
+an anonymous fetch), saved in the canonical schema. The dashboard has a whole
+**Amazon Lookup page** for this: paste a link on the procurement desk, get the
+product dossier (photo, price, rating anatomy, the raw reviews), browse the
+case files of everything fetched so far, and jump straight into the journal's
+full aspect analysis — where the product strip carries the photo too.
 
 </details>
 
