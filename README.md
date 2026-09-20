@@ -16,7 +16,7 @@
 
 <p>
   <img src="https://img.shields.io/badge/license-MIT-yellow?style=flat-square" alt="MIT License">
-  <img src="https://img.shields.io/badge/tests-61-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-79-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/code%20style-ruff-000000?style=flat-square" alt="Ruff">
   <img src="https://img.shields.io/badge/SemEval--14_macro--F1-0.79_vs_0.59_VADER-success?style=flat-square" alt="SemEval-2014 sentiment">
   <img src="https://img.shields.io/badge/extraction_F1-0.91_vs_0.52_baseline-8b5cf6?style=flat-square" alt="SemEval-2014 extraction">
@@ -104,8 +104,8 @@ Every stage ships a **fast baseline** first, then upgrades to a **transformer**:
 |:--|:--|:--|:--:|
 | **Aspect extraction** | Noun-phrase chunking (NLTK POS + grammar) | Fine-tuned **BIO** token classifier — ours | ✅ |
 | **Aspect sentiment** | VADER on the aspect's sentence | ABSA cross-encoder — pretrained **or ours** | ✅ |
-| **Theme clustering** | Keyword + normalization grouping | **MiniLM** embeddings → KMeans / HDBSCAN | 🔜 |
-| **Summary** | Top loved / hated ranking | **LLM** executive summary | 🔜 |
+| **Theme clustering** | Keyword + normalization grouping | **MiniLM** embeddings → KMeans / HDBSCAN | ✅ |
+| **Summary** | Top loved / hated ranking | **LLM** executive summary (Ollama / API) | ✅ |
 
 > Baselines aren't throwaway scaffolding — they're the **benchmark**. Every upgrade has
 > to beat a number, not a vibe.
@@ -191,6 +191,43 @@ GPU note: on Windows, the default `torch` wheel is CPU-only. For NVIDIA cards
 
 </details>
 
+<details>
+<summary><b>🌍 Real-data demo — 500 Amazon reviews through the full stack</b></summary>
+
+```bash
+python scripts/download_reviews.py                      # Amazon "Software" 5-core, 500 reviews
+
+python scripts/run_pipeline.py -i data/raw/amazon/software_reviews.csv \
+    --extractor transformer --aspect-model absa --absa-checkpoint finetuned \
+    --clustering kmeans --n-clusters 16
+```
+
+`--clustering kmeans` swaps the hand-written keyword themes for **MiniLM
+embeddings clustered with KMeans** (or `hdbscan`), so themes are *discovered*
+from the data — the only strategy that survives a vocabulary nobody enumerated.
+`--absa-checkpoint finetuned` runs our own trained classifier instead of the
+pretrained hub checkpoint.
+
+</details>
+
+<details>
+<summary><b>🧠 LLM executive summary — optional, Ollama or any OpenAI-compatible API</b></summary>
+
+```bash
+# Option A: local — install Ollama, `ollama pull llama3.1`, then:
+python scripts/run_pipeline.py --llm-summary
+
+# Option B: hosted — copy .env.example to .env, set LLM_API_BASE / LLM_API_KEY / LLM_MODEL
+```
+
+The LLM never sees raw reviews: it receives the **aggregated stats digest**
+(net scores, mention counts, representative quotes) and writes the "so what" —
+an executive summary with prioritized recommendations, saved to
+`reports/executive_summary.md`. No provider running? The step reports itself
+skipped and everything else still completes. Zero new dependencies (stdlib HTTP).
+
+</details>
+
 <br>
 
 ## 🖥️ What you get
@@ -198,7 +235,7 @@ GPU note: on Windows, the default `torch` wheel is CPU-only. For NVIDIA cards
 ```console
 $ python scripts/run_pipeline.py --extractor transformer --aspect-model absa --group-by theme
 
-=== ReviewLens pipeline (extractor=transformer, sentiment=absa) ===
+=== ReviewLens pipeline (extractor=transformer, sentiment=absa, themes=normalized) ===
 Reviews processed : 18
 Sentences         : 42
 Aspect mentions   : 59
@@ -220,7 +257,45 @@ document-level VADER score would flatten.
 ```
 
 The dashboard turns that into per-aspect stacked sentiment bars, a net-score ranking,
-sentiment-over-time, representative quotes, and product/rating filters.
+sentiment-over-time, representative quotes, product/rating filters — plus live
+switching of extractor, sentiment model, theme grouping and dataset, and an
+optional LLM summary panel.
+
+<br>
+
+## 🌍 Real data, real themes
+
+The toy sample proves the mechanism; 500 real Amazon **Software** reviews
+(5-core corpus, seeded sample) prove it survives contact with the wild
+(`scripts/download_reviews.py`, then the full fine-tuned stack):
+
+```console
+=== ReviewLens pipeline (extractor=transformer, sentiment=absa, themes=kmeans) ===
+Reviews processed : 500
+Sentences         : 5294
+Aspect mentions   : 6331
+
+-- Top loved (theme) --                    -- Top hated (theme) --
+  photoshop       net=+0.29  (n=278)         window          net=-0.05  (n=560)
+  video editing   net=+0.27  (n=153)         hard drive      net=+0.02  (n=251)
+  norton          net=+0.24  (n=263)         outlook         net=+0.05  (n=279)
+  corel           net=+0.22  (n=85)          windows 8       net=+0.09  (n=664)
+
+310 review(s) contain mixed per-aspect sentiment that a single
+document-level VADER score would flatten.
+```
+
+Two things the real data makes obvious:
+
+- **62% of real reviews are mixed** (310/500) — the failure mode a single
+  document score hides isn't an edge case, it's the majority case.
+- **Themes must be discovered, not enumerated.** `photoshop`, `norton`,
+  `corel`, `outlook` — none of these exist in the hand-written keyword map,
+  which fragments this corpus into thousands of singleton themes. The MiniLM
+  KMeans/HDBSCAN clustering finds them and names each cluster after its most
+  frequent member term. (The transformer extractor also emits **6.3k** aspect
+  mentions where the noun-phrase baseline emits **16.1k** — the same
+  precision-vs-noise gap SemEval measured, live.)
 
 <br>
 
@@ -232,20 +307,20 @@ review-lens/
 ├── 📦 src/reviewlens/
 │   ├── config.py               # loads config.yaml — single source of truth
 │   ├── nltk_setup.py           # one-shot NLTK corpora bootstrap
-│   ├── data/                   # ingest · clean · sentence-split
-│   ├── aspects/                # noun-phrase baseline · BIO tagger (next)
+│   ├── data/                   # ingest · clean · sentence-split · Amazon demo converter
+│   ├── aspects/                # noun-phrase baseline · fine-tuned BIO tagger
 │   ├── sentiment/              # VADER baseline · transformer ABSA cross-encoder
-│   ├── clustering/             # theme grouping · MiniLM embeddings (next)
-│   ├── aggregate/              # distributions · rankings · quotes · trends
+│   ├── clustering/             # keyword themes · MiniLM → KMeans / HDBSCAN
+│   ├── aggregate/              # distributions · rankings · quotes · trends · LLM summary
 │   ├── evaluation/             # SemEval-2014 downloader · parser · metrics · CLI
 │   ├── training/               # BIO alignment · example builders · both fine-tunes
 │   └── pipeline.py             # end-to-end orchestration + CLI
 │
-├── 📊 app/streamlit_app.py     # the dashboard (live model switching)
-├── 🔧 scripts/                 # run_pipeline · download · train_* · evaluate
+├── 📊 app/streamlit_app.py     # the dashboard (live model/theme/data switching)
+├── 🔧 scripts/                 # run_pipeline · download_* · train_* · evaluate
 ├── 📈 reports/                 # committed benchmark results (JSON)
 ├── 📓 notebooks/               # exploration
-├── ✅ tests/                   # 61 tests
+├── ✅ tests/                   # 79 tests
 ├── 🗃️ data/sample/             # tiny sample — pipeline runs out of the box
 ├── 🧠 models/                  # fine-tuned weights land here (git-ignored)
 └── ⚙️ config.yaml              # paths · models · thresholds
@@ -256,13 +331,15 @@ review-lens/
 ## ✅ Tests
 
 ```bash
-pytest                                        # 59 tests, <1s (no downloads, no network)
+pytest                                        # 77 tests, <4s (no downloads, no network)
 REVIEWLENS_RUN_MODEL_TESTS=1 pytest           # + 2 tests that exercise the ABSA checkpoint
 ```
 
 Model-dependent tests are opt-in by design — a default `pytest` should never pull
 370 MB of weights. The SemEval parser and metrics are tested against tiny inline
-fixtures with hand-computed expectations, not the real data.
+fixtures with hand-computed expectations, not the real data. The embedding
+clustering is tested with hand-placed fake vectors (real KMeans/HDBSCAN, no
+MiniLM download), and the LLM step through an injected transport (no network).
 
 <br>
 
@@ -335,9 +412,9 @@ understanding matters: negative and neutral opinions inside mixed sentences.
 - [x] **Slice 1 — Transformer ABSA** · `deberta-v3-base-absa` cross-encoder, swappable via config/CLI
 - [x] **Slice 2 — Evaluation harness** · SemEval-2014 measured: sentiment macro-F1 **0.79 vs 0.59** (VADER), extraction baseline F1 0.52/0.35
 - [x] **Slice 3 — Fine-tuning** · our BIO tagger: extraction F1 **0.91 / 0.85** (vs 0.52/0.35 baseline); our ABSA classifier: macro-F1 **0.79 / 0.77** trained on SemEval train only — matches the pretrained upper bound on Restaurants
-- [ ] **Slice 4 — Embedding clustering** · MiniLM + KMeans/HDBSCAN theme discovery
-- [ ] **Slice 5 — LLM executive summary** · optional, Ollama or API
-- [ ] **Slice 6 — Real Amazon/Yelp demo** + polish
+- [x] **Slice 4 — Embedding clustering** · MiniLM + KMeans/HDBSCAN theme discovery, swappable via `--clustering`; clusters auto-named after their most frequent term
+- [x] **Slice 5 — LLM executive summary** · optional `--llm-summary`, Ollama or any OpenAI-compatible API, stats-digest grounded, degrades gracefully
+- [x] **Slice 6 — Real Amazon demo** + polish · 500 real reviews through the full fine-tuned stack: **62% mixed**, themes discovered that no keyword list contained
 
 <br>
 

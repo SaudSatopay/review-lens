@@ -77,6 +77,25 @@ def _extract_terms(texts: list[str], cfg: dict[str, Any]) -> list[list[str]]:
     return [extract_aspects(text, cfg) for text in texts]
 
 
+def _absa_model_name(cfg: dict[str, Any]) -> str:
+    """Resolve which ABSA weights to load, honoring ``sentiment.absa_checkpoint``.
+
+    ``pretrained`` -> ``absa_model_name`` (hub checkpoint); ``finetuned`` -> our
+    own ``absa_finetuned_dir``, with a train-it-first error if it isn't there.
+    """
+    s_cfg = cfg["sentiment"]
+    if s_cfg.get("absa_checkpoint", "pretrained") == "finetuned":
+        path = resolve_path(s_cfg["absa_finetuned_dir"])
+        if not path.exists():
+            raise FileNotFoundError(
+                f"No fine-tuned ABSA classifier at {path}. Train it first:\n"
+                "    python scripts/download_semeval.py\n"
+                "    python scripts/train_absa.py"
+            )
+        return str(path)
+    return s_cfg["absa_model_name"]
+
+
 def _score_aspect_rows(rows: list[dict], cfg: dict[str, Any]) -> None:
     """Attach ``aspect_sentiment`` / ``aspect_compound`` to each row, in place.
 
@@ -91,7 +110,7 @@ def _score_aspect_rows(rows: list[dict], cfg: dict[str, Any]) -> None:
         # Imported here so the baseline path never requires torch.
         from reviewlens.sentiment.transformer_absa import get_absa_model
 
-        model = get_absa_model(cfg["sentiment"]["absa_model_name"])
+        model = get_absa_model(_absa_model_name(cfg))
         preds = model.predict_batch([(r["sentence"], r["aspect"]) for r in rows])
     else:
         preds = [score_aspect_sentiment(r["sentence"], r["aspect"], cfg) for r in rows]
@@ -160,9 +179,10 @@ def _print_report(result: PipelineResult, group_col: str, cfg: dict[str, Any]) -
     k, min_mentions = s_cfg["top_k_aspects"], s_cfg["min_mentions"]
 
     extractor = cfg["aspects"].get("extractor", "baseline")
+    themes = cfg["clustering"].get("method", "normalized")
     print(
         f"\n=== ReviewLens pipeline (extractor={extractor}, "
-        f"sentiment={cfg['sentiment']['aspect_model']}) ==="
+        f"sentiment={cfg['sentiment']['aspect_model']}, themes={themes}) ==="
     )
     print(f"Reviews processed : {len(result.reviews)}")
     print(f"Sentences         : {len(result.sentences)}")
@@ -211,6 +231,25 @@ def main(argv: list[str] | None = None) -> int:
         "--extractor", choices=["baseline", "transformer"], default=None,
         help="Override aspects.extractor: 'baseline' (noun-phrase) or 'transformer' (BIO).",
     )
+    parser.add_argument(
+        "--absa-checkpoint", choices=["pretrained", "finetuned"], default=None,
+        help="Which ABSA weights to use with --aspect-model absa: the pretrained "
+        "hub checkpoint or our own fine-tune from scripts/train_absa.py.",
+    )
+    parser.add_argument(
+        "--clustering", choices=["normalized", "kmeans", "hdbscan"], default=None,
+        help="Override clustering.method: keyword mapping or MiniLM embedding clusters.",
+    )
+    parser.add_argument(
+        "--n-clusters", type=int, default=None,
+        help="Override clustering.n_clusters (kmeans theme count; 8 suits the "
+        "sample, real corpora want more).",
+    )
+    parser.add_argument(
+        "--llm-summary", action="store_true",
+        help="Also generate an LLM executive summary (needs Ollama or an "
+        "OpenAI-compatible endpoint — see .env.example).",
+    )
     parser.add_argument("--no-save", action="store_true", help="Skip writing output files.")
     args = parser.parse_args(argv)
 
@@ -220,6 +259,12 @@ def main(argv: list[str] | None = None) -> int:
         cfg["sentiment"]["aspect_model"] = args.aspect_model
     if args.extractor:
         cfg["aspects"]["extractor"] = args.extractor
+    if args.absa_checkpoint:
+        cfg["sentiment"]["absa_checkpoint"] = args.absa_checkpoint
+    if args.clustering:
+        cfg["clustering"]["method"] = args.clustering
+    if args.n_clusters:
+        cfg["clustering"]["n_clusters"] = args.n_clusters
 
     result = run_pipeline(source=args.input, config=cfg)
     _print_report(result, group_col=args.group_by, cfg=cfg)
@@ -230,6 +275,22 @@ def main(argv: list[str] | None = None) -> int:
         print("\nSaved:")
         for name, path in paths.items():
             print(f"  {name:<10} {path}")
+
+    if args.llm_summary:
+        # Optional step: a missing local LLM shouldn't undo a finished run.
+        from reviewlens.aggregate.llm_summary import generate_summary
+
+        print("\n=== LLM executive summary ===")
+        try:
+            summary = generate_summary(result.aspects, group_col=args.group_by, config=cfg)
+        except RuntimeError as exc:
+            print(f"[skipped] {exc}")
+        else:
+            print(summary)
+            out_path = resolve_path("reports") / "executive_summary.md"
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(summary + "\n", encoding="utf-8")
+            print(f"\nSaved: {out_path}")
 
     return 0
 

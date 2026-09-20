@@ -36,16 +36,22 @@ sentiment:
   # absa     = transformer cross-encoder, true (sentence, aspect) -> polarity
   #            needs the ml extras: pip install -e ".[ml]"
   aspect_model: baseline
-  # Pretrained checkpoint (upper bound: its training mix includes SemEval-14 train).
+  # Which ABSA weights to load when aspect_model = absa:
+  #   pretrained = absa_model_name below (upper bound: its training mix includes
+  #                SemEval-14 train)
+  #   finetuned  = absa_finetuned_dir — our own clean fine-tune; train it first:
+  #                python scripts/train_absa.py
+  absa_checkpoint: pretrained
   absa_model_name: yangheng/deberta-v3-base-absa-v1.1
-  # Our own fine-tune (clean train/test) — train it: python scripts/train_absa.py
-  # To use it in the pipeline, point absa_model_name at this directory.
   absa_finetuned_dir: models/absa-classifier
 
 clustering:
-  method: normalized         # normalized (baseline) | kmeans | hdbscan (later slice)
+  # normalized = keyword mapping (no downloads) | kmeans / hdbscan = MiniLM
+  # embeddings clustered into data-discovered themes (needs the ml extras).
+  method: normalized
   embedding_model: sentence-transformers/all-MiniLM-L6-v2
   n_clusters: 8              # used when method = kmeans
+  min_cluster_size: 2        # used when method = hdbscan; noise terms keep their own name
 
 summary:
   top_k_aspects: 8           # how many aspects to feature as "loved" / "hated"

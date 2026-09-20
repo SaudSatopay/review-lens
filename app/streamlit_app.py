@@ -44,7 +44,7 @@ PRETRAINED_ABSA = "absa — pretrained checkpoint"
 st.set_page_config(page_title="ReviewLens", page_icon="🔍", layout="wide")
 
 
-def _model_options() -> tuple[list[str], list[str]]:
+def _model_options() -> tuple[list[str], list[str], list[str]]:
     """Model choices that are actually available in this environment."""
     cfg = load_config()
     extractors = ["baseline"]
@@ -56,23 +56,35 @@ def _model_options() -> tuple[list[str], list[str]]:
         if resolve_path(cfg["sentiment"]["absa_finetuned_dir"]).exists():
             sentiments.append(FINETUNED_ABSA)
         sentiments.append(PRETRAINED_ABSA)
-    return extractors, sentiments
+
+    themes = ["normalized"]
+    if importlib.util.find_spec("sentence_transformers") is not None:
+        themes += ["kmeans", "hdbscan"]
+    return extractors, sentiments, themes
 
 
-@st.cache_data(show_spinner="Running the pipeline on the sample…")
-def build_live(extractor: str, sentiment: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Run the pipeline on the bundled sample with the selected models."""
+def _demo_csvs() -> dict[str, str]:
+    """Real-data demo CSVs written by scripts/download_reviews.py, if any."""
+    demo_dir = resolve_path(load_config()["paths"]["data_raw"]) / "amazon"
+    return {f"live: {p.stem}": str(p) for p in sorted(demo_dir.glob("*_reviews.csv"))}
+
+
+@st.cache_data(show_spinner="Running the pipeline…")
+def build_live(
+    extractor: str, sentiment: str, clustering: str, source: str | None
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Run the pipeline on the sample (or a demo CSV) with the selected models."""
     cfg = deepcopy(load_config())
     cfg["aspects"]["extractor"] = extractor
+    cfg["clustering"]["method"] = clustering
     if sentiment == "baseline":
         cfg["sentiment"]["aspect_model"] = "baseline"
     else:
         cfg["sentiment"]["aspect_model"] = "absa"
-        if sentiment == FINETUNED_ABSA:
-            cfg["sentiment"]["absa_model_name"] = str(
-                resolve_path(cfg["sentiment"]["absa_finetuned_dir"])
-            )
-    result = run_pipeline(config=cfg)
+        cfg["sentiment"]["absa_checkpoint"] = (
+            "finetuned" if sentiment == FINETUNED_ABSA else "pretrained"
+        )
+    result = run_pipeline(source=source, config=cfg)
     return result.reviews, result.aspects
 
 
@@ -92,18 +104,20 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
         resolve_path(load_config()["paths"]["data_processed"]) / "aspects.parquet"
     ).exists()
 
-    options = ["live sample"] + (["processed outputs"] if processed_exists else [])
+    demos = _demo_csvs()  # real Amazon data from scripts/download_reviews.py
+    options = ["live sample", *demos] + (["processed outputs"] if processed_exists else [])
     source = st.sidebar.radio("Data", options, index=0)
 
     if source == "processed outputs":
         return load_processed()
 
-    extractors, sentiments = _model_options()
+    extractors, sentiments, themes = _model_options()
     extractor = st.sidebar.selectbox("Aspect extractor", extractors, index=0)
     sentiment = st.sidebar.selectbox("Aspect sentiment", sentiments, index=0)
+    clustering = st.sidebar.selectbox("Theme grouping", themes, index=0)
     if st.sidebar.button("↻ Re-run"):
         build_live.clear()
-    return build_live(extractor, sentiment)
+    return build_live(extractor, sentiment, clustering, demos.get(source))
 
 
 def sidebar_filters(aspects: pd.DataFrame) -> dict:
@@ -212,6 +226,28 @@ def render_quotes(aspects: pd.DataFrame, group_by: str) -> None:
         )
 
 
+def render_llm_summary(aspects: pd.DataFrame, group_by: str) -> None:
+    """Optional LLM executive summary — Ollama or an OpenAI-compatible endpoint."""
+    with st.expander("🧠 LLM executive summary (optional)"):
+        st.caption(
+            "Asks a local Ollama model — or any OpenAI-compatible endpoint from "
+            "your .env — to turn the aggregated numbers into an executive "
+            "summary with recommendations. See .env.example for setup."
+        )
+        if st.button("Generate summary"):
+            from reviewlens.aggregate.llm_summary import generate_summary
+
+            try:
+                with st.spinner("Asking the LLM…"):
+                    st.session_state["llm_summary"] = generate_summary(
+                        aspects, group_col=group_by
+                    )
+            except RuntimeError as exc:
+                st.warning(str(exc))
+        if st.session_state.get("llm_summary"):
+            st.markdown(st.session_state["llm_summary"])
+
+
 def main() -> None:
     st.title("🔍 ReviewLens — Aspect-Based Review Intelligence")
     st.caption(
@@ -233,11 +269,7 @@ def main() -> None:
     render_trend(filtered)
     render_quotes(filtered, f["group_by"])
 
-    with st.expander("🧠 LLM executive summary (coming in a later slice)"):
-        st.write(
-            "This panel will host an LLM-generated summary of the top loved and "
-            "hated aspects with recommendations (optional Ollama / API step)."
-        )
+    render_llm_summary(filtered, f["group_by"])
 
 
 if __name__ == "__main__":
