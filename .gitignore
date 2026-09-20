@@ -49,6 +49,10 @@ data/processed/*
 # Fine-tuned / downloaded model weights.
 models/*
 !models/.gitkeep
+# ...except the classical models: ~2 MB total, trained in seconds, and they
+# light up the CRF/NB rungs in hosted demos where nobody runs training.
+!models/crf-extractor.joblib
+!models/nb-sentiment.joblib
 
 # HuggingFace / torch caches, if pointed inside the repo.
 .cache/
