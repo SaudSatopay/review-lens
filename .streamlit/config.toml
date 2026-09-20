@@ -1,12 +1,12 @@
-# ReviewLens dashboard theme — "print noir" editorial dark.
-# Colors mirror app/streamlit_app.py PALETTE (validated against the dark surface).
+# ReviewLens dashboard theme — "the data journal": warm paper, near-black ink.
+# Colors mirror app/streamlit_app.py PALETTE (validated against the paper surface).
 
 [theme]
-base = "dark"
-primaryColor = "#E4593B"            # vermilion — interactive states, focus rings
-backgroundColor = "#171412"         # warm charcoal, not pure black
-secondaryBackgroundColor = "#1E1A15"
-textColor = "#EDE6DA"               # cream ink
+base = "light"
+primaryColor = "#6E2231"            # burgundy — interactive states, focus rings
+backgroundColor = "#F5F0E6"         # warm paper
+secondaryBackgroundColor = "#EFE8DA"
+textColor = "#191511"               # near-black warm ink
 
 [browser]
 gatherUsageStats = false

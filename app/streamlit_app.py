@@ -1,4 +1,4 @@
-"""ReviewLens dashboard (Streamlit + Plotly) — the editorial instrument.
+"""ReviewLens dashboard (Streamlit + Plotly) — the data journal.
 
 Run from the repo root::
 
@@ -12,14 +12,16 @@ Two data modes (sidebar):
   from ``scripts/download_reviews.py``), with selectable extractor / sentiment /
   theme models, so the baseline-vs-transformer difference can be flipped live.
 
-Design notes — "print noir": a review is an *opinion column*, so the UI reads
-like a well-set editorial page. Fraunces (display serif) carries headlines and
-pull-quotes, Archivo carries UI, Spline Sans Mono carries every numeral. The
-loved/hated axis is a diverging pair validated for the dark surface:
-jade ``#2DA671`` / warm-gray midpoint ``#6E6557`` / vermilion ``#E4593B``
-(poles pass lightness band, chroma floor, CVD + normal-vision separation and
-contrast; the deliberately-gray midpoint leans on 2px segment gaps, the legend
-and hover labels as secondary encoding).
+Design notes — warm paper, near-black ink, editorial composition: Gloock (a
+display didone) sets the masthead, headlines and figures; Instrument Serif
+italic carries deks and quotes; Instrument Sans is the working sans; Spline
+Sans Mono sets every numeral, kicker and axis. Semantic color is a diverging
+pair validated for the paper surface (pine-teal ``#0F8265`` / warm-gray
+midpoint ``#A2988A`` / vermilion ``#C34A24`` — the poles pass lightness band,
+chroma floor, CVD and normal-vision separation and contrast; the
+deliberately-gray midpoint leans on 2px segment gaps, the legend, hover labels
+and each chart's table view). Burgundy ``#6E2231`` is the brand accent and
+never appears inside a chart.
 """
 
 from __future__ import annotations
@@ -48,22 +50,22 @@ from reviewlens.config import load_config, resolve_path  # noqa: E402
 from reviewlens.pipeline import run_pipeline  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Palette — single source of truth; the CSS block below mirrors these values.
-# Validated with the dataviz palette validator against SURFACE (dark mode).
+# Palette — single source of truth; app/style.css mirrors these values.
+# Validated with the dataviz palette validator against SURFACE (light mode).
 # ---------------------------------------------------------------------------
 PALETTE = {
-    "surface": "#171412",
-    "surface2": "#1E1A15",
-    "surface3": "#241F19",
-    "ink": "#EDE6DA",
-    "ink_muted": "#A89F90",
-    "ink_faint": "#7A7264",
-    "hairline": "rgba(237,230,218,0.12)",
-    "grid": "rgba(237,230,218,0.07)",
-    "positive": "#2DA671",   # jade
-    "neutral": "#6E6557",    # warm gray — diverging midpoint, gray on purpose
-    "negative": "#E4593B",   # vermilion
-    "gold": "#C89B3C",       # hairline flourishes only
+    "surface": "#F5F0E6",     # warm paper
+    "surface2": "#EFE8DA",    # sidebar paper
+    "card": "#FCF9F1",        # clipping / hover card
+    "ink": "#191511",
+    "ink_muted": "#6B6154",
+    "ink_faint": "#99907F",
+    "hairline": "rgba(25,21,17,0.16)",
+    "grid": "rgba(25,21,17,0.08)",
+    "positive": "#0F8265",    # pine teal
+    "neutral": "#A2988A",     # warm gray — diverging midpoint, gray on purpose
+    "negative": "#C34A24",    # burnt vermilion
+    "brand": "#6E2231",       # burgundy — UI accent only, never in charts
 }
 
 SENTIMENT_COLORS = {
@@ -72,7 +74,7 @@ SENTIMENT_COLORS = {
     "negative": PALETTE["negative"],
 }
 
-FONT_UI = "Archivo, sans-serif"
+FONT_UI = "'Instrument Sans', sans-serif"
 FONT_MONO = "'Spline Sans Mono', monospace"
 
 MAX_GROUPS_SHOWN = 24  # real corpora surface hundreds of themes; show the top slice
@@ -82,10 +84,6 @@ PRETRAINED_ABSA = "absa — pretrained checkpoint"
 
 st.set_page_config(page_title="ReviewLens", page_icon="🔍", layout="wide")
 
-# ---------------------------------------------------------------------------
-# Stylesheet — typography, motion, chrome. Hex values mirror PALETTE above.
-# ---------------------------------------------------------------------------
-
 
 def _inject_css() -> None:
     css = (pathlib.Path(__file__).parent / "style.css").read_text(encoding="utf-8")
@@ -93,7 +91,7 @@ def _inject_css() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Plotly styling
+# Plotly styling — publication chrome shared by every chart.
 # ---------------------------------------------------------------------------
 def _rgba(hex_color: str, alpha: float) -> str:
     h = hex_color.lstrip("#")
@@ -102,28 +100,28 @@ def _rgba(hex_color: str, alpha: float) -> str:
 
 
 def _style_fig(fig, height: int, legend: bool = False):
-    """Shared chart chrome: transparent paper, recessive grid, mono numerals."""
+    """Transparent paper, recessive warm grid, mono numerals, ink labels."""
     fig.update_layout(
         height=height,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family=FONT_UI, color=PALETTE["ink_muted"], size=12.5),
-        margin=dict(l=8, r=14, t=30 if legend else 10, b=10),
+        margin=dict(l=8, r=16, t=30 if legend else 12, b=12),
         hoverlabel=dict(
-            bgcolor=PALETTE["surface3"],
-            bordercolor="rgba(237,230,218,0.25)",
+            bgcolor=PALETTE["card"],
+            bordercolor="rgba(25,21,17,0.35)",
             font=dict(family=FONT_MONO, color=PALETTE["ink"], size=12),
         ),
         showlegend=legend,
         legend=dict(
             orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
-            title_text="", font=dict(family=FONT_MONO, size=11, color=PALETTE["ink_muted"]),
+            title_text="", font=dict(family=FONT_MONO, size=10.5, color=PALETTE["ink_muted"]),
         ),
     )
     fig.update_xaxes(
-        gridcolor=PALETTE["grid"], zerolinecolor=PALETTE["hairline"], zerolinewidth=1,
-        tickfont=dict(family=FONT_MONO, size=11, color=PALETTE["ink_faint"]),
-        title_font=dict(family=FONT_MONO, size=11), title_text="",
+        gridcolor=PALETTE["grid"], zerolinecolor="rgba(25,21,17,0.25)", zerolinewidth=1,
+        tickfont=dict(family=FONT_MONO, size=10.5, color=PALETTE["ink_faint"]),
+        title_text="", showline=False,
     )
     fig.update_yaxes(
         gridcolor="rgba(0,0,0,0)",
@@ -134,18 +132,61 @@ def _style_fig(fig, height: int, legend: bool = False):
 
 
 # ---------------------------------------------------------------------------
-# Markup helpers
+# Editorial furniture
 # ---------------------------------------------------------------------------
+def render_masthead() -> None:
+    st.markdown(
+        """
+        <div class="rl-masthead">
+          <div class="rl-masthead__rule"></div>
+          <div class="rl-masthead__rule rl-masthead__rule--thin"></div>
+          <div class="rl-masthead__row">
+            <span class="rl-masthead__brand">ReviewLens<span class="rl-dot">.</span></span>
+            <span class="rl-masthead__tag">Aspect-based review intelligence</span>
+            <span class="rl-masthead__edition">measured on SemEval-2014 · MIT</span>
+          </div>
+          <div class="rl-masthead__rule rl-masthead__rule--thin"></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_hero() -> None:
+    """Headline left; right, the canonical two-star review as an annotated exhibit."""
     st.markdown(
         """
         <div class="rl-hero">
-          <div class="rl-kicker">ReviewLens · aspect-based review intelligence</div>
-          <h1>Stop scoring reviews.<br>Start <em>reading</em> them<span class="rl-dot">.</span></h1>
-          <p class="rl-dek">One review holds many verdicts — the display can be stunning
-          while the battery is a dealbreaker. Each aspect gets its own.</p>
-          <div class="rl-rules">
-            <div class="rl-rule"></div><div class="rl-rule rl-rule--thin"></div>
+          <div class="rl-hero__left">
+            <div class="rl-kicker">The case for reading properly</div>
+            <h1>Stop scoring reviews.<br>Start <em>reading</em> them<span
+              class="rl-dot">.</span></h1>
+            <p class="rl-dek">One review holds many verdicts. A single sentiment
+            score averages a stunning display against a dead battery and calls
+            the result &ldquo;positive&rdquo; — per-aspect reading keeps every
+            opinion intact.</p>
+            <div class="rl-rules">
+              <div class="rl-rule"></div><div class="rl-rule rl-rule--thin"></div>
+            </div>
+          </div>
+          <div class="rl-specimen">
+            <div class="rl-specimen__head">
+              <span>Exhibit A — a two-star review</span>
+              <span class="rl-specimen__stars">★★☆☆☆</span>
+            </div>
+            <p class="rl-specimen__text">&ldquo;The
+            <span class="rl-m rl-m--pos">display</span> is stunning but the
+            <span class="rl-m rl-m--neg">battery</span> is a dealbreaker. Also the
+            <span class="rl-m rl-m--neg">price</span> keeps going up while quality
+            stays the same.&rdquo;</p>
+            <div class="rl-specimen__verdicts">
+              <div><span>display</span><span class="rl-v--pos">positive&ensp;+0.997</span></div>
+              <div><span>battery</span><span class="rl-v--neg">negative&ensp;−0.970</span></div>
+              <div><span>price</span><span class="rl-v--neg">negative&ensp;−0.603</span></div>
+              <div><span>one document-level score</span>
+                   <span class="rl-v--flat">positive&ensp;+0.20</span></div>
+            </div>
+            <div class="rl-specimen__moral">— the flattening, exhibit closed</div>
           </div>
         </div>
         """,
@@ -153,16 +194,20 @@ def render_hero() -> None:
     )
 
 
-def render_section(num: str, title: str, note: str = "") -> None:
+def render_section(num: str, title: str, note: str = "", stand: str = "") -> None:
     note_html = f'<div class="rl-section__note">{html_lib.escape(note)}</div>' if note else ""
+    stand_html = (
+        f'<div class="rl-section__stand">{html_lib.escape(stand)}</div>' if stand else ""
+    )
     st.markdown(
         f"""
         <div class="rl-section">
           <div class="rl-section__row">
-            <span class="rl-section__num">{num}</span>
+            <span class="rl-section__num">№ {num}</span>
             <span class="rl-section__title">{html_lib.escape(title)}</span>
             {note_html}
           </div>
+          {stand_html}
           <div class="rl-section__rule"></div>
         </div>
         """,
@@ -171,24 +216,25 @@ def render_section(num: str, title: str, note: str = "") -> None:
 
 
 def render_overview(reviews: pd.DataFrame, aspects: pd.DataFrame) -> None:
+    """The figures row — rules and type, no boxes."""
     n_reviews = int(reviews["review_id"].nunique()) if not reviews.empty else 0
     mixed = int(aspects.groupby("review_id")["aspect_sentiment"].nunique().gt(1).sum())
     mixed_pct = f"{mixed / n_reviews:.0%} of all reviews" if n_reviews else "—"
-    tiles = [
+    figures = [
         ("Reviews", f"{n_reviews:,}", "unique review ids", ""),
         ("Aspect mentions", f"{len(aspects):,}", "sentence-level opinions", ""),
         ("Distinct aspects", f"{aspects['aspect'].nunique():,}", "terms extracted", ""),
-        ("Mixed-sentiment reviews", f"{mixed:,}", mixed_pct, " rl-tile--hot"),
+        ("Mixed-sentiment reviews", f"{mixed:,}", mixed_pct, " rl-figure--hot"),
     ]
     cells = "".join(
-        f"""<div class="rl-tile{hot}">
-              <div class="rl-tile__label">{label}</div>
-              <div class="rl-tile__num">{num}</div>
-              <div class="rl-tile__sub">{sub}</div>
+        f"""<div class="rl-figure{hot}">
+              <div class="rl-figure__label">{label}</div>
+              <div class="rl-figure__num">{num}</div>
+              <div class="rl-figure__sub">{sub}</div>
             </div>"""
-        for label, num, sub, hot in tiles
+        for label, num, sub, hot in figures
     )
-    st.markdown(f'<div class="rl-tiles">{cells}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="rl-figures">{cells}</div>', unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +301,7 @@ def _side_head(text: str) -> None:
 def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     st.sidebar.markdown(
         """
-        <div class="rl-wordmark">Review<span class="rl-dot">·</span>Lens</div>
+        <div class="rl-wordmark">Review<br>Lens<span class="rl-dot">.</span></div>
         <div class="rl-wordmark-sub">every aspect, its own verdict</div>
         """,
         unsafe_allow_html=True,
@@ -332,7 +378,11 @@ def render_distribution(aspects: pd.DataFrame, group_by: str, min_mentions: int)
         else f"{total_groups} groups"
     )
 
-    render_section("01", f"Sentiment by {group_by}", note)
+    render_section(
+        "01", f"Sentiment by {group_by}", note,
+        "Every bar is one theme's mentions, split by verdict — mixed bars are "
+        "the reviews a single score would flatten.",
+    )
     long = dist.melt(
         id_vars=[group_by, "mentions", "net_score"],
         value_vars=["positive", "neutral", "negative"],
@@ -345,7 +395,7 @@ def render_distribution(aspects: pd.DataFrame, group_by: str, min_mentions: int)
         color_discrete_map=SENTIMENT_COLORS, category_orders={group_by: order},
         custom_data=["sentiment"],
     )
-    # 2px surface gaps between stacked segments + rounded, thin marks.
+    # 2px paper gaps between stacked segments + rounded, thin marks.
     fig.update_traces(
         marker_line_color=PALETTE["surface"], marker_line_width=2,
         hovertemplate="%{y} · %{customdata[0]}: <b>%{x}</b><extra></extra>",
@@ -354,10 +404,13 @@ def render_distribution(aspects: pd.DataFrame, group_by: str, min_mentions: int)
     _style_fig(fig, height=max(320, 34 * len(order)), legend=True)
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    render_section("02", "The verdict", "net = (pos − neg) ÷ mentions")
+    render_section(
+        "02", "The verdict", "net = (pos − neg) ÷ mentions",
+        "One number per theme, from −1 (unanimously hated) to +1 (unanimously loved).",
+    )
     net = dist.sort_values("net_score")
     fig2 = px.bar(
-        net, x="net_score", y=group_by, orientation="h", range_x=[-1.05, 1.05],
+        net, x="net_score", y=group_by, orientation="h", range_x=[-1.12, 1.12],
         color="net_score",
         color_continuous_scale=[PALETTE["negative"], PALETTE["neutral"], PALETTE["positive"]],
         color_continuous_midpoint=0,
@@ -366,24 +419,87 @@ def render_distribution(aspects: pd.DataFrame, group_by: str, min_mentions: int)
     fig2.update_traces(
         marker_line_color=PALETTE["surface"], marker_line_width=1.5,
         textposition="outside",
-        textfont=dict(family=FONT_MONO, size=11, color=PALETTE["ink_faint"]),
+        textfont=dict(family=FONT_MONO, size=10.5, color=PALETTE["ink_faint"]),
         cliponaxis=False,
         hovertemplate="%{y}: <b>%{x:+.2f}</b><extra></extra>",
     )
     fig2.update_layout(coloraxis_showscale=False, bargap=0.5, barcornerradius=3)
     _style_fig(fig2, height=max(320, 34 * len(net)))
-    fig2.add_vline(x=0, line_color="rgba(237,230,218,0.28)", line_width=1)
+    fig2.add_vline(x=0, line_color="rgba(25,21,17,0.3)", line_width=1)
+    if len(net) >= 2:  # annotate the poles of the ranking
+        top, bottom = net.iloc[-1], net.iloc[0]
+        for row, label, color, shift in (
+            (top, "most loved", PALETTE["positive"], 14),
+            (bottom, "most hated", PALETTE["negative"], -14),
+        ):
+            fig2.add_annotation(
+                x=row["net_score"], y=row[group_by], text=label, showarrow=False,
+                yshift=shift, xanchor="left" if row["net_score"] >= 0 else "right",
+                xshift=8 if row["net_score"] >= 0 else -8,
+                font=dict(family=FONT_MONO, size=9.5, color=color),
+            )
     st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
     with st.expander("View as table"):
         st.dataframe(dist.reset_index(drop=True), use_container_width=True, hide_index=True)
 
 
+def _clip(text: str, n: int = 130) -> str:
+    text = str(text).strip()
+    return text if len(text) <= n else text[: n - 1].rstrip() + "…"
+
+
+def render_contradictions(aspects: pd.DataFrame) -> None:
+    """Reviews that praise one aspect and damn another — ABSA's reason to exist."""
+    if aspects.empty:
+        return
+    rows = []
+    for rid, grp in aspects.groupby("review_id"):
+        best = grp.loc[grp["aspect_compound"].idxmax()]
+        worst = grp.loc[grp["aspect_compound"].idxmin()]
+        if best["aspect_compound"] >= 0.3 and worst["aspect_compound"] <= -0.3:
+            rows.append((best["aspect_compound"] - worst["aspect_compound"], rid, best, worst))
+    if not rows:
+        return
+    rows.sort(key=lambda t: -t[0])
+
+    render_section(
+        "03", "In one breath",
+        f"{len(rows)} contradictory review{'s' if len(rows) != 1 else ''}",
+        "The same customer, the same review — opposite verdicts. This is what a "
+        "single sentiment score erases.",
+    )
+    cards = []
+    for spread, rid, best, worst in rows[:4]:
+        cards.append(
+            f"""<div class="rl-contra">
+                 <div class="rl-contra__meta">
+                   <span>review {html_lib.escape(str(rid))}</span>
+                   <span>spread {spread:.2f}</span>
+                 </div>
+                 <div class="rl-contra__line rl-contra__line--pos">
+                   <span class="rl-contra__aspect">{html_lib.escape(str(best['aspect']))}</span>
+                   <span class="rl-contra__quote">{html_lib.escape(_clip(best['sentence']))}</span>
+                   <span class="rl-contra__score">{best['aspect_compound']:+.2f}</span>
+                 </div>
+                 <div class="rl-contra__line rl-contra__line--neg">
+                   <span class="rl-contra__aspect">{html_lib.escape(str(worst['aspect']))}</span>
+                   <span class="rl-contra__quote">{html_lib.escape(_clip(worst['sentence']))}</span>
+                   <span class="rl-contra__score">{worst['aspect_compound']:+.2f}</span>
+                 </div>
+               </div>"""
+        )
+    st.markdown(f'<div class="rl-contras">{"".join(cards)}</div>', unsafe_allow_html=True)
+
+
 def render_trend(aspects: pd.DataFrame) -> None:
     trend = sentiment_over_time(aspects, freq="ME")
     if trend.empty:
         return
-    render_section("03", "Over time", "mentions per month")
+    render_section(
+        "04", "Over time", "mentions per month",
+        "How the volume of praise and complaint moves, month by month.",
+    )
     long = trend.melt(id_vars="period", var_name="sentiment", value_name="count")
     fig = px.area(
         long, x="period", y="count", color="sentiment",
@@ -392,7 +508,7 @@ def render_trend(aspects: pd.DataFrame) -> None:
     )
     for tr in fig.data:
         base = SENTIMENT_COLORS.get(tr.name, PALETTE["ink_muted"])
-        tr.update(line=dict(width=2, color=base), fillcolor=_rgba(base, 0.22))
+        tr.update(line=dict(width=2, color=base), fillcolor=_rgba(base, 0.18))
     fig.update_traces(hovertemplate="%{x|%b %Y} · <b>%{y}</b><extra></extra>")
     _style_fig(fig, height=340, legend=True)
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
@@ -402,7 +518,10 @@ def render_quotes(aspects: pd.DataFrame, group_by: str) -> None:
     quotes = representative_quotes(aspects, group_col=group_by, per_side=1)
     if quotes.empty:
         return
-    render_section("04", "In their own words", "most polarized quote per group")
+    render_section(
+        "05", "In their own words", "most polarized quote per group",
+        "The sentences behind the numbers — one per theme, strongest verdict first.",
+    )
 
     def _cards(subset: pd.DataFrame, side: str) -> str:
         cards = []
@@ -411,7 +530,6 @@ def render_quotes(aspects: pd.DataFrame, group_by: str) -> None:
                 f"""<div class="rl-quote rl-quote--{side}">
                      <p class="rl-quote__text">{html_lib.escape(str(r['sentence']))}</p>
                      <div class="rl-quote__meta">
-                       <span class="rl-tag">{side}</span>
                        <span>{html_lib.escape(str(r[group_by]))}</span>
                        <span class="rl-score">{r['aspect_compound']:+.2f}</span>
                      </div>
@@ -427,19 +545,27 @@ def render_quotes(aspects: pd.DataFrame, group_by: str) -> None:
 
     col_l, col_r = st.columns(2, gap="large")
     with col_l:
+        st.markdown('<div class="rl-colhead rl-colhead--loved">The praise</div>',
+                    unsafe_allow_html=True)
         st.markdown(_cards(loved, "loved"), unsafe_allow_html=True)
     with col_r:
+        st.markdown('<div class="rl-colhead rl-colhead--hated">The complaints</div>',
+                    unsafe_allow_html=True)
         st.markdown(_cards(hated, "hated"), unsafe_allow_html=True)
 
 
 def render_llm_summary(aspects: pd.DataFrame, group_by: str) -> None:
     """Optional LLM executive summary — Ollama or an OpenAI-compatible endpoint."""
-    render_section("05", "The executive summary", "optional · LLM")
+    render_section(
+        "06", "The executive summary", "optional · LLM",
+        "A model reads the aggregated numbers — never the raw reviews — and "
+        "writes the so-what.",
+    )
     with st.expander("Ask a model to read the numbers"):
         st.caption(
             "A local Ollama model — or any OpenAI-compatible endpoint from your "
-            ".env — receives the aggregated stats digest (never the raw reviews) "
-            "and writes the “so what”. See .env.example for setup."
+            ".env — receives the stats digest above and returns a short memo "
+            "with recommendations. See .env.example for setup."
         )
         if st.button("Generate summary"):
             from reviewlens.aggregate.llm_summary import generate_summary
@@ -459,8 +585,13 @@ def render_footer() -> None:
     st.markdown(
         """
         <div class="rl-footer">
-          <span>ReviewLens</span><span>·</span><span>MIT © 2026 Saud Satopay</span>
-          <span class="rl-right">fine-tuned RoBERTa ABSA · measured on SemEval-2014</span>
+          <div class="rl-footer__rule"></div>
+          <div class="rl-footer__rule rl-footer__rule--thick"></div>
+          <div class="rl-footer__row">
+            <span>ReviewLens</span><span>·</span><span>MIT © 2026 Saud Satopay</span>
+            <span class="rl-right">set in Gloock &amp; Instrument · fine-tuned RoBERTa ABSA
+            · measured on SemEval-2014</span>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -470,6 +601,7 @@ def render_footer() -> None:
 # ---------------------------------------------------------------------------
 def main() -> None:
     _inject_css()
+    render_masthead()
     render_hero()
 
     reviews, aspects = load_data()
@@ -482,6 +614,7 @@ def main() -> None:
 
     render_overview(reviews, filtered)
     render_distribution(filtered, f["group_by"], f["min_mentions"])
+    render_contradictions(filtered)
     render_trend(filtered)
     render_quotes(filtered, f["group_by"])
     render_llm_summary(filtered, f["group_by"])
