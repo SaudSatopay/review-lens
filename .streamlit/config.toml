@@ -1,0 +1,12 @@
+# ReviewLens dashboard theme — "print noir" editorial dark.
+# Colors mirror app/streamlit_app.py PALETTE (validated against the dark surface).
+
+[theme]
+base = "dark"
+primaryColor = "#E4593B"            # vermilion — interactive states, focus rings
+backgroundColor = "#171412"         # warm charcoal, not pure black
+secondaryBackgroundColor = "#1E1A15"
+textColor = "#EDE6DA"               # cream ink
+
+[browser]
+gatherUsageStats = false
