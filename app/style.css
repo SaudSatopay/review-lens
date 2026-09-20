@@ -10,10 +10,22 @@
 @import url('https://fonts.googleapis.com/css2?family=Gloock&family=Instrument+Serif:ital@0;1&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
 
 /* ---- streamlit chrome, gone ------------------------------------------- */
-#MainMenu, footer, [data-testid="stAppDeployButton"], [data-testid="stToolbar"],
+/* NOTE: stToolbar must stay alive — it is the DOM home of the sidebar-expand
+   button. Its other occupants (deploy, menu, status) are hidden individually. */
+#MainMenu, footer, [data-testid="stAppDeployButton"], [data-testid="stMainMenu"],
 [data-testid="stDecoration"], [data-testid="stStatusWidget"],
 [data-testid="stElementToolbar"] { display: none !important; }
 header[data-testid="stHeader"] { background: transparent; height: 0; }
+
+/* the way back from a collapsed sidebar — pinned, paper-styled */
+[data-testid="stExpandSidebarButton"] {
+  position: fixed; top: 0.8rem; left: 0.8rem; z-index: 999;
+  background: #FCF9F1; color: #191511;
+  border: 1px solid rgba(25,21,17,0.35); border-radius: 0;
+  box-shadow: 0 8px 20px rgba(25,21,17,0.14);
+  transition: color .15s ease, border-color .15s ease;
+}
+[data-testid="stExpandSidebarButton"]:hover { color: #6E2231; border-color: #6E2231; }
 
 /* ---- paper -------------------------------------------------------------- */
 .stApp { font-family: 'Instrument Sans', sans-serif; background: #F5F0E6; color: #191511; }
